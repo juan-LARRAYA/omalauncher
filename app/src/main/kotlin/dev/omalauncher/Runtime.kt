@@ -66,7 +66,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
@@ -163,13 +162,8 @@ class Runtime(
         androidApps.iconsFirst = {
             usage.recent.take(20).filter { it.startsWith("a:") }.mapTo(HashSet()) { it.substringAfter(':') } + widgets.shortcuts.items.mapNotNull(::androidKeyOf)
         }
-        // An uninstalled app leaves home with its package, and one removed while the launcher was off goes at start.
+        // An uninstalled app leaves home with its package. No sweep at start: package visibility and disabled apps make "missing" unreliable.
         androidApps.onRemoved = { pkg -> dropPinned { it.component?.packageName == pkg } }
-        scope.launch {
-            snapshotFlow { androidApps.listed }.first { it }
-            val pm = context.packageManager
-            dropPinned { s -> s.profile == null && s.component?.packageName?.let { runCatching { pm.getApplicationInfo(it, 0) }.isFailure } == true }
-        }
         androidApps.start()
         // Omarchy's Super bindings inside Linux windows; the home screen handles its own (see MainActivity).
         keyboard.onShortcut = { code ->
