@@ -1,0 +1,38 @@
+name: juan-build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install the NDK and bsdtar
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq libarchive-tools
+          ndk=$(sed -n 's/^NDK_VERSION=//p' scripts/fetch-proot.sh)
+          [ -d "$ANDROID_HOME/ndk/$ndk" ] || yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" >/dev/null
+
+      - name: Fetch proot
+        run: ./scripts/fetch-proot.sh
+
+      - name: Build release (re-signed locally afterwards)
+        run: ./gradlew :app:assembleRelease
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: omalauncher-juan
+          path: app/build/outputs/apk/release/*.apk
+          retention-days: 7
