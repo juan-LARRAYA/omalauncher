@@ -122,6 +122,7 @@ class Runtime(
     /** Its jobs write files and start the guest; one that fails (storage full) mustn't take the home screen down. */
     private val scope =
         CoroutineScope(SupervisorJob() + Dispatchers.Main + CoroutineExceptionHandler { _, e -> Log.e(TAG, "background job failed", e) })
+    val crashWatch = CrashWatch(context, scope)
     private var started = false
     private var prepared = false
 
@@ -141,6 +142,7 @@ class Runtime(
     private var linuxJob: Job? = null
 
     init {
+        crashWatch.start()
         // Saved, so removing Linux later doesn't bring the first-run screen back.
         if (launcherReady) prefs.edit().putBoolean(SETUP_DONE, true).apply()
         themes.loadPalette()

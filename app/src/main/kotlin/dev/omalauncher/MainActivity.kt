@@ -20,7 +20,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
+import dev.omalauncher.linux.agentInvocation
 import dev.omalauncher.ui.Palette
+import dev.omalauncher.ui.SettingsPage
 import dev.omalauncher.theme.Style
 import dev.omalauncher.ui.KeyIndicated
 import dev.omalauncher.ui.keyPressed
@@ -63,6 +65,7 @@ class MainActivity : ComponentActivity() {
         }
         handleDebugExec(intent)
         handleSharedWidget(intent)
+        handleCrash(intent)
         // Asked on arriving at the home screen, not over the welcome screen of a fresh install,
         // and once nothing else is in front: not over the notification permission dialog that
         // opting into Linux there brings up.
@@ -97,6 +100,19 @@ class MainActivity : ComponentActivity() {
                     ?: Log.w("debug", "no theme $name")
             }
         }
+    }
+
+    /** A crash notification was tapped: hand the crash it names to the default agent, or pick one first. */
+    private fun handleCrash(intent: Intent) {
+        val id = intent.getIntExtra(CrashWatch.EXTRA_CRASH, 0).takeIf { it != 0 } ?: return
+        intent.removeExtra(CrashWatch.EXTRA_CRASH)
+        val crash = runtime.crashWatch.crash(id) ?: return
+        val target = runtime.agents.default
+        if (target == null) {
+            runtime.openSettings(SettingsPage.Agents)
+            return
+        }
+        runtime.terminal("${agentInvocation(target.bin, CrashWatch.prompt(crash), true)}; exec bash", target.name, target)
     }
 
     /**
@@ -153,6 +169,7 @@ class MainActivity : ComponentActivity() {
      */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        handleCrash(intent)
         val nothingOpen =
             state.drawer.value == 0f && state.pulled == null && !state.homeMenuOpen && state.shared == null &&
                 state.sharing == null && runtime.widgets.openScreen == null && state.editing == null
