@@ -164,7 +164,7 @@ class Style(
         val SPARE_PAGES =
             Setting.Flag(
                 "home.spare-pages",
-                true,
+                false,
                 "The empty page that always waits left of the first page and after the last one, for dropping a tile or a face on. false hides them; add pages in home/layout.toml.",
             )
 

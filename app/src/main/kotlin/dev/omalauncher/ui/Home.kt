@@ -416,6 +416,13 @@ fun HomeScreen(
                                 state.sharing = spec
                             }
                         }
+                        // Like a stock launcher's long-press menu: an installed (not preinstalled) app can be uninstalled here.
+                        if (app != null && !app.system) {
+                            EditAction("uninstall", Palette.red) {
+                                state.editing = null
+                                runtime.androidApps.uninstall(app)
+                            }
+                        }
                         EditAction("remove", Palette.red) { remove(item) }
                     }
                 }
