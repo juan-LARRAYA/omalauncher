@@ -4,18 +4,15 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.os.DropBoxManager
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
-import java.io.BufferedReader
-import java.io.InputStreamReader
 
 /** One crash seen in the system's crash log, kept until the user taps its notification. */
 class Crash(
@@ -27,7 +24,7 @@ class Crash(
 )
 
 /**
- * Watches Android's crash log (`logcat -b crash`) for apps that crash, and announces each with a notification whose
+ * Watches Android's crash records (the DropBox) for apps that crash, and announces each with a notification whose
  * tap hands the crash to the default coding agent, like Omarchy's crash watcher does with systemd-coredump.
  * Reading other apps' crashes needs READ_LOGS, which only adb can grant:
  * `adb shell pm grant <package> android.permission.READ_LOGS`. Without it the log shows nothing and this stays idle.
@@ -44,43 +41,30 @@ class CrashWatch(
     fun crash(id: Int): Crash? = synchronized(seen) { seen[id] }
 
     fun start() {
-        scope.launch(Dispatchers.IO) {
-            while (isActive) {
-                runCatching { watch() }.onFailure { Log.w(TAG, "crash watch stopped", it) }
-                // logcat ended (the log was cleared, or the permission changed): look again in a bit.
-                delay(RETRY_MS)
-            }
-        }
-    }
-
-    private suspend fun watch() {
-        // -T 1: only crashes from now on, not the buffer's old ones.
-        val process = ProcessBuilder("logcat", "-b", "crash", "-T", "1", "-v", "threadtime").redirectErrorStream(true).start()
-        val lines = Channel<String>(Channel.UNLIMITED)
-        val reader = scope.launch(Dispatchers.IO) {
-            BufferedReader(InputStreamReader(process.inputStream)).use { r ->
-                while (isActive) lines.trySend(r.readLine() ?: break)
-            }
-            lines.close()
-        }
-        try {
-            val group = ArrayList<String>()
-            while (true) {
-                // A crash's lines arrive together; a quiet moment closes the group.
-                val line = withTimeoutOrNull(GROUP_QUIET_MS) { lines.receiveCatching() }
-                if (line == null) {
-                    if (group.isNotEmpty()) announce(group.toList())
-                    group.clear()
-                    continue
+        // The system's own record of crashes (its DropBox), announced to holders of READ_LOGS: no logcat, so no
+        // "allow access to all device logs?" prompt. Registered at runtime, as the broadcast is only for live receivers.
+        val receiver =
+            object : BroadcastReceiver() {
+                override fun onReceive(
+                    c: Context,
+                    intent: Intent,
+                ) {
+                    val tag = intent.getStringExtra(DropBoxManager.EXTRA_TAG) ?: return
+                    if (tag !in TAGS) return
+                    val time = intent.getLongExtra(DropBoxManager.EXTRA_TIME, 0L)
+                    scope.launch(Dispatchers.IO) {
+                        runCatching {
+                            val box = context.getSystemService(DropBoxManager::class.java)
+                            val entry = box.getNextEntry(tag, time - 1) ?: return@launch
+                            val text = entry.use { it.getText(MAX_CHARS) } ?: return@launch
+                            announce(listOf(text))
+                        }.onFailure { Log.w(TAG, "crash entry unreadable", it) }
+                    }
                 }
-                val text = line.getOrNull() ?: break
-                if (group.size < MAX_LINES) group.add(text)
             }
-            if (group.isNotEmpty()) announce(group.toList())
-        } finally {
-            reader.cancel()
-            process.destroy()
-        }
+        runCatching {
+            context.registerReceiver(receiver, IntentFilter(DropBoxManager.ACTION_DROPBOX_ENTRY_ADDED), Context.RECEIVER_NOT_EXPORTED)
+        }.onFailure { Log.w(TAG, "crash watch not registered", it) }
     }
 
     private fun announce(group: List<String>) {
@@ -145,15 +129,14 @@ class CrashWatch(
         private const val CHANNEL = "crashes"
         private const val CRASH_NOTIFICATION_BASE = 5000
         private const val TAG = "CrashWatch"
-        private const val RETRY_MS = 30_000L
-        private const val GROUP_QUIET_MS = 1_200L
         private const val DEDUPE_MS = 60_000L
-        private const val MAX_LINES = 40
         private const val MAX_CHARS = 4_000
         private const val KEEP = 20
 
-        // "AndroidRuntime: Process: com.app, PID: 1234"
-        private val JAVA_PROCESS = Regex("""Process: ([\w.:]+), PID: (\d+)""")
+        private val TAGS = setOf("data_app_crash", "system_app_crash", "data_app_native_crash", "system_app_native_crash", "SYSTEM_TOMBSTONE")
+
+        // A DropBox crash entry: "Process: com.app\nPID: 1234"
+        private val JAVA_PROCESS = Regex("""Process: ([\w.:]+)\s+PID: (\d+)""")
 
         // "DEBUG : pid: 1234, tid: 1234, name: x  >>> com.app <<<"
         private val NATIVE_PROCESS = Regex("""pid: (\d+), tid: \d+, name: \S+\s+>>> ([\w./:-]+) <<<""")
@@ -169,7 +152,7 @@ class CrashWatch(
               PID:      ${crash.pid}
               kind:     ${crash.kind}
 
-            The log lines (this Linux can't see Android's logs, so this is all there is):
+            The crash record (this Linux can't see Android's logs, so this is all there is):
 
             ${crash.excerpt}
 
