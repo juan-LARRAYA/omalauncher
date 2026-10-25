@@ -66,6 +66,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
@@ -161,6 +162,13 @@ class Runtime(
         // The recent strip's and home's pinned apps.
         androidApps.iconsFirst = {
             usage.recent.take(20).filter { it.startsWith("a:") }.mapTo(HashSet()) { it.substringAfter(':') } + widgets.shortcuts.items.mapNotNull(::androidKeyOf)
+        }
+        // An uninstalled app leaves home with its package, and one removed while the launcher was off goes at start.
+        androidApps.onRemoved = { pkg -> dropPinned { it.component?.packageName == pkg } }
+        scope.launch {
+            snapshotFlow { androidApps.listed }.first { it }
+            val pm = context.packageManager
+            dropPinned { s -> s.profile == null && s.component?.packageName?.let { runCatching { pm.getApplicationInfo(it, 0) }.isFailure } == true }
         }
         androidApps.start()
         // Omarchy's Super bindings inside Linux windows; the home screen handles its own (see MainActivity).
@@ -538,6 +546,11 @@ class Runtime(
         if (agent != null) launchedAgents[appId] = agent
         val args = command?.let { " -e bash -c " + shellQuote(it) }.orEmpty()
         launch("foot --app-id=$appId${terminalFont.optionFor(appId, command)}$args")
+    }
+
+    /** Takes the pinned Android apps [match] picks off home, and whole folders that end up empty are tidied by Shortcuts. */
+    private fun dropPinned(match: (Shortcut) -> Boolean) {
+        widgets.shortcuts.items.filter(match).map { it.key }.forEach { widgets.shortcuts.remove(it) }
     }
 
     /** Opens a pinned app from the home screen. A Linux one runs its current desktop entry, which an update may have changed. */

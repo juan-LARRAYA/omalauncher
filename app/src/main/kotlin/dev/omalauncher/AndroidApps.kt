@@ -227,6 +227,9 @@ class AndroidAppCatalog(
     /** Keys of the apps whose icons are drawn first, ahead of the alphabet: the ones showing as the launcher starts. */
     var iconsFirst: () -> Set<String> = { emptySet() }
 
+    /** Told when an app of this user is uninstalled (not when it is updated), so home can drop its tile. */
+    var onRemoved: (String) -> Unit = {}
+
     /** Whether the apps have been listed once; until then [apps] is empty because nothing was asked yet, not because there are none. */
     var listed by mutableStateOf(false)
         private set
@@ -239,7 +242,10 @@ class AndroidAppCatalog(
             object : LauncherApps.Callback() {
                 override fun onPackageAdded(packageName: String, user: UserHandle) = reload()
 
-                override fun onPackageRemoved(packageName: String, user: UserHandle) = reload()
+                override fun onPackageRemoved(packageName: String, user: UserHandle) {
+                    if (user == android.os.Process.myUserHandle()) onRemoved(packageName)
+                    reload()
+                }
 
                 // Updates can change the icon, so drop the cached one.
                 override fun onPackageChanged(packageName: String, user: UserHandle) = reload(evict = packageName)

@@ -1059,6 +1059,9 @@ class WidgetEngine(
         private const val AGENT_POINTER =
             "# omalauncher\n\nThis Arch system runs inside an Android launcher, omalauncher; its source is at " +
                 "https://github.com/SimonSchubert/omalauncher, should you need to understand how the launcher works. " +
+                "Make a widget, panel or face only when the user explicitly asks for one: a request is otherwise a script, a file, an app, " +
+                "a document or a service, and the home screen is not where its answer goes. What follows is reference for when a widget or the " +
+                "launcher's look is asked for. " +
                 "Home-screen widgets are `.owl` files in " +
                 "~/$GUEST_DIR, written in a small declarative language documented in README.md there (and docs/ next to it); so are apps for the " +
                 "app drawer (`app \"name\" { }`) and panels that swiping up or down on home opens (`panel \"name\" { }`, picked with " +

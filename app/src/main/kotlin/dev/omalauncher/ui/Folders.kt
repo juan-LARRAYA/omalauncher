@@ -88,8 +88,12 @@ fun FolderTile(
             verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
         ) {
             // Straight on the tile, filling an app icon's room.
-            val mini = badge * 0.47f
-            Column(verticalArrangement = Arrangement.spacedBy(badge * 0.06f)) {
+            val mini = badge * 0.40f
+            // A light outline around the apps; the name stays outside it, under.
+            Column(
+                Modifier.frame(1.dp, Palette.accent.copy(alpha = 0.45f), radius = 12.dp).padding(badge * 0.06f),
+                verticalArrangement = Arrangement.spacedBy(badge * 0.05f),
+            ) {
                 for (row in 0 until 2) {
                     Row(horizontalArrangement = Arrangement.spacedBy(badge * 0.06f)) {
                         for (col in 0 until 2) {
