@@ -1,0 +1,94 @@
+name: sync-upstream
+
+# Daily: when upstream OmaLauncher has a new version, merge it into the personal branch (juan), run its tests,
+# build, sign with the personal key and publish a release. The phone's "actualizar" widget notices the release and
+# asks before anything is installed; Android then installs it over the existing app, keeping its data.
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: juan
+          fetch-depth: 0
+
+      - name: Is upstream ahead?
+        id: ahead
+        run: |
+          git remote add upstream https://github.com/SimonSchubert/omalauncher.git
+          git fetch -q upstream main
+          up=$(git show upstream/main:app/build.gradle.kts | sed -n 's/.*versionName = "\(.*\)".*/\1/p')
+          base=$(cat .upstream-base 2>/dev/null || echo none)
+          echo "upstream=$up base=$base"
+          echo "up=$up" >> "$GITHUB_OUTPUT"
+          if [ "$up" = "$base" ]; then echo "ahead=no" >> "$GITHUB_OUTPUT"; else echo "ahead=yes" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Merge upstream
+        if: steps.ahead.outputs.ahead == 'yes'
+        id: merge
+        run: |
+          git config user.name "omalauncher-sync"; git config user.email "sync@users.noreply.github.com"
+          if git merge --no-edit upstream/main; then echo "ok=yes" >> "$GITHUB_OUTPUT"; else git merge --abort; echo "ok=no" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Report a merge conflict
+        if: steps.ahead.outputs.ahead == 'yes' && steps.merge.outputs.ok == 'no'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue create --title "Upstream ${{ steps.ahead.outputs.up }} does not merge into juan" --body "The personal patches conflict with upstream ${{ steps.ahead.outputs.up }}. Merge it by hand: git fetch upstream && git merge upstream/main on juan. Nothing was published."
+
+      - uses: actions/setup-java@v4
+        if: steps.merge.outputs.ok == 'yes'
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.merge.outputs.ok == 'yes'
+
+      - name: NDK, bsdtar and proot
+        if: steps.merge.outputs.ok == 'yes'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq libarchive-tools
+          ndk=$(sed -n 's/^NDK_VERSION=//p' scripts/fetch-proot.sh)
+          [ -d "$ANDROID_HOME/ndk/$ndk" ] || yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" >/dev/null
+          ./scripts/fetch-proot.sh
+
+      - name: Tests (a failure stops here: nothing is published)
+        if: steps.merge.outputs.ok == 'yes'
+        run: ./gradlew :owl:test :app:testDebugUnitTest
+
+      - name: Build and sign
+        if: steps.merge.outputs.ok == 'yes'
+        env:
+          KS_B64: ${{ secrets.KS_B64 }}
+          KS_PASS: ${{ secrets.KS_PASS }}
+        run: |
+          test -n "$KS_B64" || { echo "KS_B64/KS_PASS secrets are not set"; exit 1; }
+          ./gradlew :app:assembleRelease
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/juan.jks"
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$apksigner" sign --ks "$RUNNER_TEMP/juan.jks" --ks-key-alias juan --ks-pass env:KS_PASS --key-pass env:KS_PASS \
+            --out omalauncher-juan.apk app/build/outputs/apk/release/app-release.apk
+          "$apksigner" verify --print-certs omalauncher-juan.apk | head -3
+          rm -f "$RUNNER_TEMP/juan.jks"
+
+      - name: Publish
+        if: steps.merge.outputs.ok == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "${{ steps.ahead.outputs.up }}" > .upstream-base
+          git add .upstream-base && git commit -qm "Synced with upstream ${{ steps.ahead.outputs.up }}"
+          tag="v${{ steps.ahead.outputs.up }}-juan.$(date +%Y%m%d%H%M)"
+          git push origin HEAD:juan
+          gh release create "$tag" omalauncher-juan.apk --target juan --title "OmaLauncher ${{ steps.ahead.outputs.up }} (personal build)" \
+            --notes "Upstream ${{ steps.ahead.outputs.up }} merged into the personal patches; unit tests passed. Installing it updates the app in place and keeps Linux, widgets and layout."
