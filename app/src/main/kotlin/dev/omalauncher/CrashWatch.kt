@@ -55,7 +55,11 @@ class CrashWatch(
                     scope.launch(Dispatchers.IO) {
                         runCatching {
                             val box = context.getSystemService(DropBoxManager::class.java)
-                            val entry = box.getNextEntry(tag, time - 1) ?: return@launch
+                            val entry = box.getNextEntry(tag, time - 1)
+                            if (entry == null) {
+                                Log.w(TAG, "crash entry $tag not readable: needs READ_LOGS and the GET_USAGE_STATS app op")
+                                return@launch
+                            }
                             val text = entry.use { it.getText(MAX_CHARS) } ?: return@launch
                             announce(listOf(text))
                         }.onFailure { Log.w(TAG, "crash entry unreadable", it) }
