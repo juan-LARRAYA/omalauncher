@@ -1,6 +1,8 @@
 name: juan-build
 
 on:
+  push:
+    branches: [juan]
   workflow_dispatch:
 
 permissions:
