@@ -13,6 +13,8 @@
     <uses-permission android:name="android.permission.READ_LOGS" tools:ignore="ProtectedPermissions" />
     <!-- Android also asks for the usage-stats app op before it hands over a DropBox entry; adb allows it: appops set <package> GET_USAGE_STATS allow -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
+    <!-- Android 17 sends the DropBox "entry added" broadcast only to holders of this one; adb grants it. -->
+    <uses-permission android:name="android.permission.READ_DROPBOX_DATA" tools:ignore="ProtectedPermissions" />
     <!-- Speech input for the agent prompt bar; only recognized text reaches Linux. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
