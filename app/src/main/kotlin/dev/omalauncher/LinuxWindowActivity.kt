@@ -40,12 +40,15 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import dev.omalauncher.linux.Agent
 import dev.omalauncher.ui.ExtraKeys
 import dev.omalauncher.ui.KeyboardSink
 import dev.omalauncher.ui.Mono
 import dev.omalauncher.ui.Palette
+import dev.omalauncher.ui.TextSize
 import dev.omalauncher.ui.linuxWindowInput
 import dev.omalauncher.wayland.WindowRenderer
 import dev.omalauncher.wayland.XdgToplevel
@@ -68,19 +71,17 @@ class LinuxWindowActivity : InstantActivity() {
         }
         this.window = window
         setInstantContent {
-            AppWindow(runtime, window)
+            // Terminals retitle constantly; only a new label changes the Recents card.
+            val name = runtime.displayName(window.appId, window.title)
+            val agent = runtime.agentOf(window.appId, name)
+            val chat = chatTitle(window.title, name, agent)
+            AppWindow(runtime, window, chat)
             BackHandler { backInstantly() }
             LaunchedEffect(window) {
                 snapshotFlow { window in runtime.wm.appWindows }.first { !it }
                 closeInstantly()
             }
-            // Terminals retitle constantly; only a new label changes the Recents card.
-            val name = runtime.displayName(window.appId, window.title)
-            val agent = runtime.agentOf(window.appId, name)
-            // An agent's terminal is titled after its chat (Claude Code: "✳ topic", a spinner while it works),
-            // which tells sessions apart; without the leading glyphs the label holds still as it spins.
-            val chat = window.title.trimStart { !it.isLetterOrDigit() }.trimEnd()
-            val label = chat.takeIf { agent != null && it.isNotEmpty() && it != name && it != agent.name } ?: name
+            val label = chat ?: name
             val appIcon = runtime.iconNamed(agent?.name ?: name)
             LaunchedEffect(label, appIcon, Palette.accent) { describeTask(label, appIcon?.asAndroidBitmap()) }
         }
@@ -128,6 +129,24 @@ class LinuxWindowActivity : InstantActivity() {
 }
 
 /**
+ * The chat an agent's terminal is titled after (Claude Code: "✳ topic", a spinner while it works), which tells
+ * sessions apart; null for other windows. Without the leading glyphs it holds still as the spinner turns. Claude
+ * started from a plain terminal counts too: its glyph-led title gives it away.
+ */
+internal fun chatTitle(
+    title: String,
+    name: String,
+    agent: Agent?,
+): String? {
+    val chat = title.trimStart { !it.isLetterOrDigit() }.trimEnd()
+    val agentLike = agent != null || title.firstOrNull()?.isLetterOrDigit() == false
+    return chat.takeIf { agentLike && it.isNotEmpty() && it != name && it != agent?.name }
+}
+
+/** Height of the bar naming a window's chat. */
+private val CHAT_BAR = 32.dp
+
+/**
  * Recents shows the manifest label ("Linux", or an alias's), but it does use the
  * task icon: the app's drawer icon, else its initials in the theme colors.
  */
@@ -164,6 +183,8 @@ internal fun taskIcon(
 private fun AppWindow(
     runtime: Runtime,
     window: XdgToplevel,
+    /** Shown in a bar over the window: Recents shows only the icon, so the thumbnail is what tells sessions apart. */
+    chat: String?,
 ) {
     var sink by remember { mutableStateOf<KeyboardSink?>(null) }
     var surfaceView by remember { mutableStateOf<WindowSurfaceView?>(null) }
@@ -172,6 +193,7 @@ private fun AppWindow(
     val density = LocalDensity.current
     // Where the keyboard ends up, not each frame of its slide, and read here so the extra keys come and go in the same
     // frame: the window then resizes once, and a terminal reflows once.
+    val bar = if (chat != null) CHAT_BAR else 0.dp
     val keyboard = (WindowInsets.imeAnimationTarget.getBottom(density) - WindowInsets.navigationBars.getBottom(density)).coerceAtLeast(0)
     Box(
         Modifier
@@ -188,12 +210,21 @@ private fun AppWindow(
         AndroidView(
             factory = { context -> WindowSurfaceView(context, runtime, window).also { surfaceView = it } },
             update = { it.background = background },
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().padding(top = bar),
         )
+        if (chat != null) {
+            BasicText(
+                "💬 $chat",
+                Modifier.fillMaxWidth().height(bar).background(Palette.overlay).padding(horizontal = 12.dp, vertical = 6.dp),
+                style = Mono.copy(color = Palette.accent, fontSize = TextSize.Item),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         val keyboardHeight = with(density) { keyboard.toDp() }
         // Where the keyboard is still sliding in, so the window's old frame doesn't show beneath it.
         Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(keyboardHeight).background(Palette.background))
-        Column(Modifier.fillMaxSize().padding(bottom = keyboardHeight)) {
+        Column(Modifier.fillMaxSize().padding(top = bar, bottom = keyboardHeight)) {
             Box(
                 Modifier
                     .weight(1f)
