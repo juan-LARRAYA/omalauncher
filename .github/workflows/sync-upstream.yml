@@ -43,7 +43,7 @@ jobs:
         if: steps.ahead.outputs.ahead == 'yes' && steps.merge.outputs.ok == 'no'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh issue create --title "Upstream ${{ steps.ahead.outputs.up }} does not merge into juan" --body "The personal patches conflict with upstream ${{ steps.ahead.outputs.up }}. Merge it by hand: git fetch upstream && git merge upstream/main on juan. Nothing was published."
+        run: gh issue create --title "Upstream ${{ steps.ahead.outputs.up }} does not merge into juan" --body "The personal patches conflict with upstream ${{ steps.ahead.outputs.up }}. Merge it by hand (git fetch upstream, then git merge upstream/main on juan). Nothing was published."
 
       - uses: actions/setup-java@v4
         if: steps.merge.outputs.ok == 'yes'
