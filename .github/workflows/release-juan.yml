@@ -59,6 +59,8 @@ jobs:
           NOTES: ${{ inputs.notes }}
         run: |
           ver=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts | head -1)
-          tag="v$ver-juan.b${{ github.run_number }}"
-          gh release create "$tag" omalauncher-juan.apk --target juan --title "OmaLauncher $ver (personal build ${{ github.run_number }})" \
+          last=$(gh release list -R "${{ github.repository }}" --limit 100 --json tagName --jq '[.[].tagName | capture("juan\\.b?(?<n>[0-9]+)$").n | tonumber] | max // 0')
+          n=$((last + 1))
+          tag="v$ver-juan.$n"
+          gh release create "$tag" omalauncher-juan.apk --target juan --title "OmaLauncher $ver (personal build $n)" \
             --notes "Commit $(git rev-parse --short HEAD) of juan; unit tests passed. ${NOTES}"
