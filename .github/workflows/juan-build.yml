@@ -30,7 +30,7 @@ jobs:
       - name: Fetch proot
         run: ./scripts/fetch-proot.sh
 
-      - name: Unit tests (a failure stops here: no APK)
+      - name: "Unit tests (a failure stops here, no APK)"
         run: ./gradlew :app:testDebugUnitTest
 
       - name: Build release (re-signed locally afterwards)
