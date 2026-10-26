@@ -36,7 +36,7 @@ jobs:
           [ -d "$ANDROID_HOME/ndk/$ndk" ] || yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" >/dev/null
           ./scripts/fetch-proot.sh
 
-      - name: Tests (a failure stops here: nothing is published)
+      - name: "Tests (a failure stops here, nothing is published)"
         run: ./gradlew :owl:test :app:testDebugUnitTest
 
       - name: Build and sign
