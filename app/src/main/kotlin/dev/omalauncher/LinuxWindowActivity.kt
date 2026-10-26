@@ -75,7 +75,8 @@ class LinuxWindowActivity : InstantActivity() {
             val name = runtime.displayName(window.appId, window.title)
             val agent = runtime.agentOf(window.appId, name)
             val chat = chatTitle(window.title, name, agent)
-            AppWindow(runtime, window, chat)
+            // An agent's window has the bar from the start, so it doesn't shrink (and the agent redraw) when the chat gets a name.
+            AppWindow(runtime, window, chat ?: agent?.name)
             BackHandler { backInstantly() }
             LaunchedEffect(window) {
                 snapshotFlow { window in runtime.wm.appWindows }.first { !it }
