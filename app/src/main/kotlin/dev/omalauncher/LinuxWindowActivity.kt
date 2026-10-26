@@ -75,8 +75,13 @@ class LinuxWindowActivity : InstantActivity() {
                 closeInstantly()
             }
             // Terminals retitle constantly; only a new label changes the Recents card.
-            val label = runtime.displayName(window.appId, window.title)
-            val appIcon = runtime.iconNamed(runtime.agentOf(window.appId, label)?.name ?: label)
+            val name = runtime.displayName(window.appId, window.title)
+            val agent = runtime.agentOf(window.appId, name)
+            // An agent's terminal is titled after its chat (Claude Code: "✳ topic", a spinner while it works),
+            // which tells sessions apart; without the leading glyphs the label holds still as it spins.
+            val chat = window.title.trimStart { !it.isLetterOrDigit() }.trimEnd()
+            val label = chat.takeIf { agent != null && it.isNotEmpty() && it != name && it != agent.name } ?: name
+            val appIcon = runtime.iconNamed(agent?.name ?: name)
             LaunchedEffect(label, appIcon, Palette.accent) { describeTask(label, appIcon?.asAndroidBitmap()) }
         }
     }
