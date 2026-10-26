@@ -18,21 +18,25 @@ private const val MAX_BACKOFF_MS = 60_000L
 /**
  * Plays guest audio: PulseAudio in the guest renders into a FIFO in the shared
  * runtime dir (module-pipe-sink) and we copy that stream into an AudioTrack.
- * Blocking AudioTrack writes pace the pipe, and so PulseAudio's clock.
+ * Blocking AudioTrack writes pace the pipe, and so PulseAudio's clock. The microphone goes the other
+ * way through [mic].
  */
 class AudioBridge(
     private val proot: Proot,
+    private val mic: MicBridge,
 ) {
     private val fifo = File(proot.runtimeDir, "audio.fifo")
     private val runtimeDir = Proot.GUEST_RUNTIME_DIR
 
-    /** PulseAudio config: only the socket clients use and the pipe sink we read. */
+    /** PulseAudio config: only the socket clients use, the pipe sink we read and the pipe source we write. */
     private val config =
         """
         load-module module-native-protocol-unix auth-anonymous=1 socket=$runtimeDir/pulse/native
         load-module module-pipe-sink file=$runtimeDir/${fifo.name} format=s16le rate=$RATE channels=2 sink_name=android sink_properties=device.description=Android
+        load-module module-pipe-source file=$runtimeDir/${mic.fifo.name} format=s16le rate=$MIC_RATE channels=1 source_name=android_mic source_properties=device.description=Microphone
         load-module module-suspend-on-idle timeout=1
         set-default-sink android
+        set-default-source android_mic
         """.trimIndent() + "\n"
 
     private val lock = Object()
@@ -78,6 +82,7 @@ class AudioBridge(
         thread(name = "pulseaudio", isDaemon = true) { superviseDaemon() }
         thread(name = "audio-bridge", isDaemon = true) { pump() }
         thread(name = "audio-idle", isDaemon = true) { pauseWhenIdle() }
+        mic.start()
     }
 
     /** Stops restarting PulseAudio; the caller ends the running one along with the other guest processes. */
