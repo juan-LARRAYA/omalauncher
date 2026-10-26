@@ -21,6 +21,12 @@ class ChatTitleTest {
         assertEquals("Fix bug", chatTitle("✳ Fix bug", "Terminal", null))
     }
 
+    @Test fun claudeTopicInAPlainTerminalCounts() {
+        // Claude Code's generated topic may come without the glyph.
+        assertEquals("Pegar imágenes", chatTitle("Pegar imágenes", "Terminal", null, terminal = true))
+        assertNull(chatTitle("foot", "Terminal", null, terminal = true))
+    }
+
     @Test fun plainWindowsHaveNone() {
         assertNull(chatTitle("foot", "Terminal", null))
         assertNull(chatTitle("", "Terminal", null))

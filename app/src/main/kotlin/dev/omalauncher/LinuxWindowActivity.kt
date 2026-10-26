@@ -74,7 +74,7 @@ class LinuxWindowActivity : InstantActivity() {
             // Terminals retitle constantly; only a new label changes the Recents card.
             val name = runtime.displayName(window.appId, window.title)
             val agent = runtime.agentOf(window.appId, name)
-            val chat = chatTitle(window.title, name, agent)
+            val chat = chatTitle(window.title, name, agent, terminal = window.appId == "foot")
             // An agent's window has the bar from the start, so it doesn't shrink (and the agent redraw) when the chat gets a name.
             AppWindow(runtime, window, chat ?: agent?.name)
             BackHandler { backInstantly() }
@@ -132,15 +132,16 @@ class LinuxWindowActivity : InstantActivity() {
 /**
  * The chat an agent's terminal is titled after (Claude Code: "✳ topic", a spinner while it works), which tells
  * sessions apart; null for other windows. Without the leading glyphs it holds still as the spinner turns. Claude
- * started from a plain terminal counts too: its glyph-led title gives it away.
+ * started from a plain [terminal] counts too: there any title but foot's own is what's running in it.
  */
 internal fun chatTitle(
     title: String,
     name: String,
     agent: Agent?,
+    terminal: Boolean = false,
 ): String? {
     val chat = title.trimStart { !it.isLetterOrDigit() }.trimEnd()
-    val agentLike = agent != null || title.firstOrNull()?.isLetterOrDigit() == false
+    val agentLike = agent != null || title.firstOrNull()?.isLetterOrDigit() == false || terminal && title != "foot"
     return chat.takeIf { agentLike && it.isNotEmpty() && it != name && it != agent?.name }
 }
 
