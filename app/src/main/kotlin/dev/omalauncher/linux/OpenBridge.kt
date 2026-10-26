@@ -24,6 +24,8 @@ class OpenBridge(
     /** A guest path to edit, and the host path of the FIFO that gets the reply once it's closed. */
     private val onEdit: (String, String) -> Unit,
 ) {
+    private val clipboard = GuestClipboard(context)
+
     private val fifo = File(proot.runtimeDir, "open.fifo")
     private val guestFifo = "${Proot.GUEST_RUNTIME_DIR}/${fifo.name}"
 
@@ -56,6 +58,14 @@ class OpenBridge(
         if (url.startsWith(EDIT_PREFIX)) {
             val (reply, path) = url.removePrefix(EDIT_PREFIX).split(' ', limit = 2).takeIf { it.size == 2 } ?: return
             return onEdit(path, proot.guestFile(reply)?.path ?: return)
+        }
+        // Written by the wl-paste shim: its reply FIFO (made by mktemp) and what it wants.
+        if (url.startsWith(CLIP_PREFIX)) {
+            val (reply, what) = url.removePrefix(CLIP_PREFIX).split(' ', limit = 2).takeIf { it.size == 2 } ?: return
+            val file = proot.guestFile(reply) ?: return
+            // Off the bridge thread: an image takes a moment, and the FIFO blocks until the shim reads.
+            thread(name = "clip-reply", isDaemon = true) { clipboard.answer(what, file) }
+            return
         }
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
             Log.i(TAG, "ignoring non-URL $url")
@@ -106,11 +116,50 @@ class OpenBridge(
                 exec micro "${'$'}@"
                 """.trimIndent() + "\n"
             },
+            Managed.text(File(bin, "wl-paste"), Policy.Owned, executable = true) {
+                """
+                #!/bin/sh
+                # omalauncher: wl-paste reading Android's clipboard, images included, from the launcher; the
+                # compositor has no data-control protocol for the real one. Ctrl+V in Claude Code pastes
+                # copied screenshots with it. Exits 1 with nothing to paste, like wl-paste (see GuestClipboard.kt).
+                what=text newline=1
+                while [ ${'$'}# -gt 0 ]; do
+                    case ${'$'}1 in
+                        -l | --list-types) what=types ;;
+                        -n | --no-newline) newline= ;;
+                        -t | --type) shift; type=${'$'}{1-} ;;
+                        --type=*) type=${'$'}{1#--type=} ;;
+                        -p | --primary | -w | --watch) exit 1 ;;
+                    esac
+                    shift
+                done
+                case ${'$'}{type-} in
+                    '') ;;
+                    image/png) what=image ;;
+                    text/* | *STRING* | TEXT) ;;
+                    *) exit 1 ;;
+                esac
+                reply=${'$'}(mktemp -u ${Proot.GUEST_RUNTIME_DIR}/clip.XXXXXX)
+                out=${'$'}(mktemp) || exit 1
+                trap 'rm -f "${'$'}reply" "${'$'}out"' EXIT
+                trap 'exit 130' INT TERM HUP
+                mkfifo -m 600 "${'$'}reply" || exit 1
+                timeout 2 sh -c 'printf "%s\n" "${'$'}1" > $guestFifo' sh "$CLIP_PREFIX${'$'}reply ${'$'}what" || exit 1
+                # A launcher without this bridge never answers: give up instead of hanging the paste.
+                [ ${'$'}what = image ] && wait=15 || wait=3
+                timeout ${'$'}wait cat "${'$'}reply" > "${'$'}out" || exit 1
+                [ -s "${'$'}out" ] || exit 1
+                cat "${'$'}out"
+                [ ${'$'}what = text ] && [ -n "${'$'}newline" ] && echo
+                exit 0
+                """.trimIndent() + "\n"
+            },
         )
     }
 
     private companion object {
         const val FILES_PREFIX = "omarchy-files:"
         const val EDIT_PREFIX = "omarchy-edit:"
+        const val CLIP_PREFIX = "omarchy-clip:"
     }
 }
