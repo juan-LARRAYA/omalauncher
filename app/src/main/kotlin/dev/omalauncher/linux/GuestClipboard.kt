@@ -44,11 +44,13 @@ class GuestClipboard(
             FileOutputStream(reply).use { out ->
                 // Android shows the clipboard only to the focused app: the terminal is, when wl-paste runs from it.
                 val item = manager.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
-                val image =
+                val copied =
                     item?.uri?.takeIf {
                         context.contentResolver.getType(it)?.startsWith("image/") == true ||
                             manager.primaryClipDescription?.hasMimeType("image/*") == true
-                    } ?: recentScreenshot()
+                    }
+                // A screenshot taken after the copy is the image meant: the clipboard's may be long forgotten.
+                val image = recentScreenshot(after = if (copied != null) manager.primaryClipDescription?.timestamp ?: 0L else 0L) ?: copied
                 when (what) {
                     "types" -> out.write(types(item, image).joinToString("") { "$it\n" }.toByteArray())
                     "image" -> image?.let { png(it, out) }
@@ -69,10 +71,10 @@ class GuestClipboard(
         if (item?.text != null) addAll(listOf("text/plain;charset=utf-8", "text/plain"))
     }
 
-    /** The newest screenshot of the last [RECENT_SCREENSHOT_SECONDS]; null without the photos permission. */
-    private fun recentScreenshot(): Uri? {
+    /** The newest screenshot of the last [RECENT_SCREENSHOT_SECONDS] taken [after] (epoch ms); null without the photos permission. */
+    private fun recentScreenshot(after: Long): Uri? {
         if (context.checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED) return null
-        val since = System.currentTimeMillis() / 1000 - RECENT_SCREENSHOT_SECONDS
+        val since = maxOf(System.currentTimeMillis() / 1000 - RECENT_SCREENSHOT_SECONDS, after / 1000 + 1)
         val images = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
         context.contentResolver
             .query(
