@@ -908,6 +908,15 @@ class LangTest {
         assertTrue(compileError("widget {\n meta { owl: 12 }\n source n = android.network\n Text { text: 1 } }").contains("android.network needs owl 13"))
     }
 
+    @Test fun androidPower() {
+        val p = Compiler.compile("widget {\n meta { owl: 15 }\n source p = android.power every 2s\n Text { text: p.current + \" mA \" + p.watts + \" W\" } }")
+        val s = p.globals.first() as Global.Source
+        assertEquals("android.power", s.kind)
+        assertEquals(2.0, s.every, 0.0)
+        assertTrue(!p.needsLinux)
+        assertTrue(compileError("widget {\n meta { owl: 14 }\n source p = android.power every 2s\n Text { text: 1 } }").contains("android.power needs owl 15"))
+    }
+
     @Test fun androidAlarmModesAndPhoneActions() {
         val p = Compiler.compile("widget {\n meta { owl: 7 }\n source a = android.alarm\n source m = android.modes\n Text { text: a.time; onTap: { torch(\"toggle\"); torch(!m.torch); share(\"hi\"); haptic() } } }")
         assertEquals(listOf("android.alarm", "android.modes"), p.globals.map { (it as Global.Source).kind })
@@ -1038,6 +1047,15 @@ class LangTest {
         assertTrue(compileError("widget {\n meta { owl: 13 }\n opacity: 0.9\n Text { text: 1 } }").isNotEmpty())
     }
 
+    @Test fun aPanelCanKeepTheKeyboardDown() {
+        assertTrue(Compiler.compile("panel {\n meta { owl: 11 }\n Text { text: 1 } }").keyboard)
+        assertFalse(Compiler.compile("panel {\n meta { owl: 15 }\n keyboard: false\n Text { text: 1 } }").keyboard)
+        assertTrue(Compiler.compile("panel {\n meta { owl: 15 }\n keyboard: true\n Text { text: 1 } }").keyboard)
+        assertTrue(compileError("panel {\n meta { owl: 14 }\n keyboard: false\n Text { text: 1 } }").contains("needs owl 15"))
+        assertTrue(compileError("panel {\n meta { owl: 15 }\n state k = false\n keyboard: k\n Text { text: 1 } }").contains("keyboard is true or false"))
+        assertTrue(compileError("widget {\n meta { owl: 15 }\n keyboard: false\n Text { text: 1 } }").isNotEmpty())
+    }
+
     @Test fun extraKeysAreAFileOfTheirOwn() {
         val p =
             Compiler.compile(
@@ -1079,6 +1097,46 @@ class LangTest {
             assertTrue(compileError("widget {\n meta { owl: 11 }\n $old }").contains("needs owl 12"))
             Compiler.compile("widget {\n meta { owl: 12 }\n $old }")
         }
+    }
+
+    @Test fun photosPickedPasteIntoTheWindow() {
+        val p = Compiler.compile("keybar {\n meta { owl: 15 }\n Box { onTap: pickImages(); Text { text: 1 } } }")
+        assertEquals(listOf("paste images you pick on Android into the Linux window you're typing in"), p.commands)
+        val host = TestHost(p)
+        (p.screen!!.single() as WNode.Element).handlers["onTap"]!!.run(Env.root(host), listOf(Num(0.0), Num(0.0)))
+        assertEquals(listOf("pickImages "), host.actions)
+        assertTrue(compileError("keybar {\n meta { owl: 14 }\n Box { onTap: pickImages(); Text { text: 1 } } }").contains("needs owl 15"))
+        assertTrue(compileError("keybar {\n meta { owl: 15 }\n Box { onTap: pickImages(\"a\"); Text { text: 1 } } }").isNotEmpty())
+        for (h in listOf("onPress", "onRelease")) {
+            assertTrue(compileError("keybar {\n meta { owl: 15 }\n Box { $h: pickImages(); Text { text: 1 } } }").contains("put it in onTap"))
+        }
+        // A handler inside another node's doesn't carry over: the outer one is onTap again after it.
+        Compiler.compile("keybar {\n meta { owl: 15 }\n Box { onPress: haptic(); onTap: pickImages(); Text { text: 1 } } }")
+    }
+
+    @Test fun speechDictatesIntoASource() {
+        val src = "widget {\n meta { owl: 15 }\n source said = android.speech\n on said.final { if value { typeText(value) } }\n Text { text: said.text; onTap: speech(\"toggle\") } }"
+        val p = Compiler.compile(src)
+        assertEquals("android.speech", (p.globals.single() as Global.Source).kind)
+        assertEquals("listen through the microphone after a tap, and read what you say", p.commands.first())
+        val host = TestHost(p)
+        (p.root.single() as WNode.Element).handlers["onTap"]!!.run(Env.root(host), listOf(Num(0.0), Num(0.0)))
+        assertEquals(listOf("speech toggle"), host.actions)
+        assertTrue(compileError(src.replace("owl: 15", "owl: 14")).contains("needs owl 15"))
+        assertTrue(compileError(src.replace("\"toggle\"", "\"listen\"")).contains("speech takes start, stop, toggle, cancel"))
+        // Nothing comes back from it: what's heard is the source's.
+        assertTrue(compileError(src.replace("text: said.text", "text: speech(\"start\")")).contains("gives nothing back"))
+        assertTrue(compileError("widget {\n meta { owl: 15 }\n Text { text: 1; onTap: speech(\"start\") } }").contains("source said = android.speech"))
+        // Starting may ask for the microphone: from a tap, not a press or a trigger. Stopping from anywhere.
+        for (h in listOf("onPress", "onRelease")) assertTrue(compileError(src.replace("onTap", h)).contains("start it in onTap"))
+        Compiler.compile(src.replace("onTap: speech(\"toggle\")", "onTap: speech(\"start\"); onRelease: speech(\"stop\")"))
+        assertTrue(compileError(src.replace("typeText(value)", "speech(\"start\")")).contains("not in a trigger"))
+        Compiler.compile(src.replace("typeText(value)", "speech(\"stop\")"))
+        // Only on said.final may type what was heard: not said.text, though it ends with the same words.
+        assertTrue(p.triggers.single().dictation)
+        assertFalse(Compiler.compile(src.replace("on said.final", "on said.text")).triggers.single().dictation)
+        val other = "widget {\n meta { owl: 15 }\n source said = android.speech\n state final = \"\"\n on final { typeText(value) }\n Text { text: said.text; onTap: speech(\"toggle\") } }"
+        assertFalse(Compiler.compile(other).triggers.single().dictation)
     }
 
     @Test fun keyNamesAndCombos() {
@@ -1141,8 +1199,22 @@ class LangTest {
     @Test fun appsWithoutAStatusBarStepAroundTheCamera() {
         Compiler.compile("app {\n meta { owl: 12 }\n statusBar: false\n Column { padding: [12, screenTop, 12, 0]\n Text { text: 1 } } }")
         assertTrue(compileError("app {\n meta { owl: 11 }\n statusBar: false\n Spacer { height: screenTop } }").contains("needs owl 12"))
-        assertTrue(compileError("face {\n meta { owl: 12 }\n Spacer { height: screenTop } }").contains("screenTop is for apps"))
         assertTrue(compileError("widget {\n meta { owl: 12 }\n Text { text: 1 }\n screen { Text { text: screenTop } } }").contains("screenTop is for apps"))
+    }
+
+    @Test fun edgeFacesDrawUnderTheStatusBar() {
+        val face = Compiler.compile("face {\n meta { owl: 14 }\n edge: true\n Column { padding: [12, screenTop, 12, 0]\n Text { text: 1 } } }")
+        assertTrue(face.edge)
+        assertFalse(Compiler.compile("face {\n meta { owl: 13 }\n Text { text: 1 } }").edge)
+        assertTrue(compileError("face {\n meta { owl: 13 }\n edge: true\n Text { text: 1 } }").contains("needs owl 14"))
+        assertTrue(compileError("face {\n meta { owl: 14 }\n state e = true\n edge: e\n Text { text: 1 } }").contains("edge is true or false"))
+        assertTrue(compileError("face {\n meta { owl: 14 }\n Text { text: 1 }\n screen { Text { text: screenTop } } }").contains("screenTop is for apps"))
+        Compiler.compile("face {\n meta { owl: 14 }\n edge: true\n Column { padding: [screenLeft, 0, screenRight, 0]\n Text { text: 1 } } }")
+        // Without edge a face starts below the status bar and beside a cutout, so there's nothing for them to measure.
+        assertTrue(compileError("face {\n meta { owl: 14 }\n Spacer { width: screenLeft } }").contains("screenLeft is for faces with edge"))
+        assertTrue(compileError("face {\n meta { owl: 14 }\n Spacer { height: screenTop } }").contains("screenTop is for apps"))
+        assertTrue(compileError("face {\n meta { owl: 14 }\n edge: false\n Spacer { height: screenTop } }").contains("screenTop is for apps"))
+        assertTrue(compileError("app {\n meta { owl: 14 }\n Spacer { width: screenRight } }").contains("screenRight is for faces"))
     }
 
     @Test fun longPressIsForPagesAppsAndScreens() {
@@ -1326,6 +1398,14 @@ class LangTest {
         compileError("widget {\n meta { owl: 13 }\n Box { drag: vertical } }").let { assertTrue(it, it.contains("add onDrag")) }
         compileError("widget {\n meta { owl: 13 }\n state v = 0\n Box { onDragEnd: v = vx } }").let { assertTrue(it, it.contains("onDragEnd runs when an onDrag drag ends")) }
         compileError("widget {\n meta { owl: 13 }\n component C() { Box { } }\n C { drag: horizontal } }").let { assertTrue(it, it.contains("drag goes on the node inside C")) }
+    }
+
+    /** ripple: false turns off the press shown on a node that takes taps (owl 14). */
+    @Test fun rippleOff() {
+        Compiler.compile("widget {\n meta { owl: 14 }\n state n = 0\n Box { ripple: false; onTap: n = n + 1 } }")
+        compileError("widget {\n meta { owl: 13 }\n state n = 0\n Box { ripple: false; onTap: n = n + 1 } }").let { assertTrue(it, it.contains("ripple needs owl 14")) }
+        compileError("widget {\n meta { owl: 14 }\n Box { ripple: false } }").let { assertTrue(it, it.contains("add onTap")) }
+        compileError("widget {\n meta { owl: 14 }\n component C() { Box { } }\n C { ripple: false } }").let { assertTrue(it, it.contains("ripple goes on the node inside C")) }
     }
 
     /** The SIM, Do Not Disturb switched, notifications snoozed, and offsets that ease back (owl 13). */

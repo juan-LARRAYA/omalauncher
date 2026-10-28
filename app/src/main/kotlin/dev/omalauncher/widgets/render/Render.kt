@@ -832,7 +832,8 @@ private fun common(
         val rotation = p.float("rotation", 0f)
         val scale = p.float("scale", 1f)
         val clip = p.observe("clip")?.truthy == true
-        val radius = p.observe("radius")?.num() ?: 0.0
+        // A shape with a negative or NaN corner throws when it's laid out, which took home down (Play, 0.13.0).
+        val radius = p.observe("radius")?.num()?.takeIf { it > 0 }?.coerceAtMost(MAX_DP) ?: 0.0
         m =
             m.graphicsLayer {
                 alpha = opacity().coerceIn(0f, 1f)
@@ -897,9 +898,10 @@ private fun handlers(
     val haptics = LocalHapticFeedback.current
     val claim = LocalLongPressClaim.current
     if (tap != null || long != null) {
-        // A ripple where it's pressed, except on a widget's tile and in a key bar.
+        // A ripple where it's pressed, except on a widget's tile and in a key bar, and on a node with `ripple: false` (owl
+        // 14) that shows its press itself.
         val presses = remember { MutableInteractionSource() }
-        val ripple = LocalRipple.current
+        val ripple = LocalRipple.current && p.observe("ripple")?.truthy != false
         if (ripple) m = m.ripple(presses, p.float("radius", if (el.kind == "Button" || p.has("border")) 8f * LauncherStyle.cornerScale else 0f))
         m =
             m.pointerInput(el, p.env, long != null, ripple) {

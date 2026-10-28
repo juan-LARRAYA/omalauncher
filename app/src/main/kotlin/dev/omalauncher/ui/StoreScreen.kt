@@ -137,6 +137,11 @@ fun StoreScreen(
                                 if (message == null && market.kind == OwlKind.Widget) onDismiss()
                             }
                         },
+                        onAddPages = { scope.launch { message = market.addPages(e) } },
+                        onRemove = {
+                            message = null
+                            market.remove(e)
+                        },
                     )
                 }
                 val list = @Composable { modifier: Modifier ->
@@ -176,7 +181,7 @@ private fun KindToggle(
     kinds: List<OwlKind>,
     onPick: (OwlKind) -> Unit,
 ) {
-    Row(Modifier.padding(end = 4.dp).frame(1.dp, Palette.border, radius = 14.dp).clip(RoundedCornerShape(14.dp))) {
+    Row(Modifier.padding(end = 4.dp).frame(1.dp, Palette.border, radius = 14.dp)) {
         for (k in kinds) {
             val label = "${k.word}s"
             val on = k == kind
@@ -233,7 +238,8 @@ private fun StoreList(
                     .sortedWith(compareBy({ -it.value }, { known(it.key) }, { it.key }))
                     .forEach { (c, n) -> add(c to n) }
                 market.entries.count { it.category == null }.takeIf { it > 0 }?.let { add(OTHER to it) }
-                if (installed.isNotEmpty()) add(INSTALLED to installed.size)
+                // There even when nothing is, as "new" is, so each kind's store has the same tabs.
+                add(INSTALLED to installed.size)
             }
         val q = filter.query.trim().lowercase()
         // In the catalog's order, which the store repo sets in order.txt.
@@ -270,25 +276,36 @@ private fun StoreList(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (market.kind == OwlKind.Widget && filter.tab == ALL && q.isEmpty()) {
-                item(key = "builtin", span = { GridItemSpan(maxLineSpan) }) { Caption("built in") }
-                item(key = "terminal") {
-                    BuiltInEntry("terminal", "6x4 · a shell", added = false, page = page) {
-                        scope.launch {
-                            engine.addTerminalWidget(page)
-                            onDismiss()
-                        }
-                    }
-                }
-                items(agents, key = { "agent:" + it.bin }) { agent ->
-                    BuiltInEntry(
-                        agent.name,
-                        "6x6 · runs ${agent.command}",
-                        added = engine.hasAgentWidget(agent),
-                        page = page,
-                    ) {
-                        scope.launch {
-                            engine.addAgentWidget(agent, page)
-                            onDismiss()
+                // One row that scrolls sideways, so a long list of agents doesn't push the catalog off the screen.
+                item(key = "builtin", span = { GridItemSpan(maxLineSpan) }) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Caption("built in")
+                        // Scrolls under the panel's padding, as the tabs do.
+                        Row(
+                            Modifier.bleed(PanelPadding).horizontalScroll(rememberScrollState()).padding(horizontal = PanelPadding),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            BuiltInEntry("terminal", "6x4 · a shell", added = false, page = page) {
+                                scope.launch {
+                                    engine.addTerminalWidget(page)
+                                    onDismiss()
+                                }
+                            }
+                            for (agent in agents) {
+                                key(agent.bin) {
+                                    BuiltInEntry(
+                                        agent.name,
+                                        "6x6 · runs ${agent.command}",
+                                        added = engine.hasAgentWidget(agent),
+                                        page = page,
+                                    ) {
+                                        scope.launch {
+                                            engine.addAgentWidget(agent, page)
+                                            onDismiss()
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -301,6 +318,7 @@ private fun StoreList(
                         market.error != null && market.entries.isEmpty() -> BasicText(market.error.orEmpty(), style = Mono.copy(color = Palette.red))
                         market.entries.isEmpty() -> BasicText("no $noun yet", style = Mono.copy(color = Palette.muted))
                         shown.isEmpty() && q.isEmpty() && filter.tab == NEW -> BasicText("no new $noun", style = Mono.copy(color = Palette.muted))
+                        shown.isEmpty() && q.isEmpty() && filter.tab == INSTALLED -> BasicText("no $noun installed from the store", style = Mono.copy(color = Palette.muted))
                         shown.isEmpty() -> BasicText("nothing matches \"${filter.query.trim()}\"", style = Mono.copy(color = Palette.muted))
                     }
                 }
@@ -316,6 +334,9 @@ private const val OTHER = "other"
 private const val INSTALLED = "installed"
 
 private val CardIconSize = 32.dp
+
+/** A built-in entry's width, room for "tap to add to page 10". */
+private val BuiltInWidth = 180.dp
 private val DetailIconSize = 48.dp
 
 /** How tall an entry's page shows its preview and screens, so its description stays in view. */
@@ -343,7 +364,7 @@ private fun Chip(
     )
 }
 
-/** A built-in entry, a grid cell of its own: a terminal tile, plain or running an agent's CLI, straight from the launcher rather than the catalog. */
+/** A built-in entry, a card in the built-in row: a terminal tile, plain or running an agent's CLI, straight from the launcher rather than the catalog. */
 @Composable
 private fun BuiltInEntry(
     name: String,
@@ -354,7 +375,7 @@ private fun BuiltInEntry(
 ) {
     Column(
         Modifier
-            .fillMaxWidth()
+            .width(BuiltInWidth)
             .frame(1.dp, Palette.border, radius = 12.dp)
             .clickable(enabled = !added, onClick = onAdd)
             .padding(8.dp),
@@ -456,7 +477,7 @@ private fun Card(
                 installed -> "✓ installed" to Palette.green
                 !e.supported -> "needs a newer launcher" to Palette.red
                 !linux && e.needsLinux -> "needs linux" to Palette.muted
-                else -> "${e.category ?: OTHER}${e.size?.let { " · ${it.first}x${it.second}" } ?: ""}" to Palette.muted
+                else -> "${e.category ?: OTHER}${e.size?.let { " · ${it.first}x${it.second}" } ?: pagesText(e)}" to Palette.muted
             }
         // An app's icon goes before its name and status, as in the drawer; widgets have none.
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -516,6 +537,8 @@ private fun Detail(
     modifier: Modifier,
     onOpen: () -> Unit,
     onInstall: () -> Unit,
+    onAddPages: () -> Unit,
+    onRemove: () -> Unit,
 ) = key(e.id) {
     val installed = market.installedVersion(e)
     val update = market.hasUpdate(e)
@@ -547,7 +570,7 @@ private fun Detail(
                     BasicText(e.name, Modifier.weight(1f, fill = false), style = Mono.copy(fontSize = TextSize.Title))
                     if (e.new) NewBadge()
                 }
-                val size = e.size?.let { " · ${it.first}x${it.second}" } ?: ""
+                val size = e.size?.let { " · ${it.first}x${it.second}" } ?: pagesText(e)
                 BasicText("${e.category ?: OTHER} · ${e.author} · v${e.version} · ${e.license}$size", style = Mono.copy(color = Palette.muted, fontSize = TextSize.Small))
             }
         }
@@ -573,6 +596,14 @@ private fun Detail(
                     Spacer(Modifier.width(8.dp))
                     BracketAction("open", Palette.accent, Modifier.takesPassedKeys(), onOpen)
                 }
+            // A face's page removed on home, or one its version added, comes back only from here.
+            installed != null && market.missingPages(e) > 0 ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AddedMark(market.kind)
+                    Spacer(Modifier.width(8.dp))
+                    val n = market.missingPages(e)
+                    BracketAction(if (n == 1) "add its missing page" else "add its $n missing pages", Palette.accent, Modifier.passesKeys(), onAddPages)
+                }
             installed != null -> AddedMark(market.kind)
             else ->
                 BracketAction(
@@ -587,6 +618,27 @@ private fun Detail(
                     onInstall,
                 )
         }
+        if (installed != null && busy == null) {
+            // Asked first, as removing a page is.
+            var confirming by remember { mutableStateOf(false) }
+            val word = if (market.kind == OwlKind.App) "uninstall" else "remove"
+            BracketAction(word, Palette.red) { confirming = true }
+            if (confirming) {
+                ConfirmDialog(
+                    "$word ${e.name}?",
+                    if (installed.pages.isEmpty()) {
+                        "Its file goes to .removed/ in the widgets folder."
+                    } else {
+                        "Its files go to .removed/ in the widgets folder."
+                    },
+                    word,
+                    onDismiss = { confirming = false },
+                ) {
+                    confirming = false
+                    onRemove()
+                }
+            }
+        }
         message?.let { BasicText(it, style = Mono.copy(color = Palette.red, fontSize = TextSize.Small)) }
         if (!linux && e.needsLinux) NeedsLinuxNote(market.kind == OwlKind.App)
 
@@ -598,6 +650,9 @@ private fun Detail(
         }
     }
 }
+
+/** " · 2 pages" for a face with several, else nothing. */
+private fun pagesText(e: CatalogEntry) = if (e.pages.isEmpty()) "" else " · ${1 + e.pages.size} pages"
 
 /** Where an added widget, face, app or panel went. */
 @Composable

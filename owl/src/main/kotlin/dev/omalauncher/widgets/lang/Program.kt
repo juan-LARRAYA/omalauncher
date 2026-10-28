@@ -324,6 +324,11 @@ class Trigger(
     val pos: Int,
     /** `on x first`: also for x's first value, with `old` null. */
     val first: Boolean = false,
+    /**
+     * `on said.final` for a `source said = android.speech`: runs as a dictation ends, with what was heard, and may
+     * type it with typeText and pressKey, which other triggers can't (see WidgetInstance).
+     */
+    val dictation: Boolean = false,
 )
 
 class Program(
@@ -349,7 +354,7 @@ class Program(
     /** An app's `back`: while true, the frame shows a back chevron and Back runs [onBack] instead of closing it. */
     val back: Ev? = null,
     val onBack: Action? = null,
-    /** An app's `edge`: its view runs on under the navigation bar, which `screenInset` measures. */
+    /** An app's `edge`: its view runs on under the navigation bar, which `screenInset` measures. A face's: its nodes run on under the status bar and a camera cutout, which `screenTop`, `screenLeft` and `screenRight` measure. */
     val edge: Boolean = false,
     /** A panel's `onSubmit`: Enter in the prompt bar while it's open, with what's typed as `value`. */
     val onSubmit: Action? = null,
@@ -359,6 +364,8 @@ class Program(
     val enter: Ev? = null,
     /** A panel's `opacity`: how much the backdrop the launcher draws behind it covers home, 0 to 1; null for the default. */
     val opacity: Ev? = null,
+    /** A panel's `keyboard`: whether the keyboard comes up as it opens above the prompt bar; false leaves it down until the bar is tapped. */
+    val keyboard: Boolean = true,
     val onTap: Action? = null,
     val triggers: List<Trigger>,
     /** Shell commands this widget can run, known without running it; for reviewing shared widgets. */

@@ -2,14 +2,12 @@ package dev.omalauncher.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.omalauncher.Runtime
@@ -60,19 +58,22 @@ private fun AgentRow(
     Column(
         Modifier.card(10.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
+        ActionsRow(
+            actions = {
+                // Keys on install or remove wait out the job, for what it ends with.
+                when {
+                    state is JobState.Working -> BasicText("${state.action}…", style = Mono.copy(color = Palette.accent))
+                    installed -> {
+                        BracketAction("open", Palette.green, Modifier.takesPassedKeys(), onOpen)
+                        BracketAction("remove", Palette.red, Modifier.passesKeys(), onRemove)
+                    }
+                    else -> BracketAction("install", Palette.accent, Modifier.takesPassedKeys().passesKeys(), onInstall)
+                }
+            },
+        ) {
+            Column {
                 BasicText(agent.name, style = Mono.copy(fontSize = TextSize.Item))
                 BasicText(agent.description, style = Mono.copy(color = Palette.muted, fontSize = TextSize.Small))
-            }
-            // Keys on install or remove wait out the job, for what it ends with.
-            when {
-                state is JobState.Working -> BasicText("${state.action}…", style = Mono.copy(color = Palette.accent))
-                installed -> {
-                    BracketAction("open", Palette.green, Modifier.takesPassedKeys(), onOpen)
-                    BracketAction("remove", Palette.red, Modifier.passesKeys(), onRemove)
-                }
-                else -> BracketAction("install", Palette.accent, Modifier.takesPassedKeys().passesKeys(), onInstall)
             }
         }
         JobLog(state)

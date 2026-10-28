@@ -101,13 +101,18 @@ fun HomeScreen(
     // while they hold something, so it becomes a real page once used and a new empty one follows.
     // Left of page 1 the same, for faces: like a stock launcher's feed, but the user's own. An empty one waits left of
     // the leftmost, page 0 at first, then -1, -2, ... as they fill.
+    // home.empty-page-left and home.empty-page-right turn each off; the right one still comes while a tile is carried,
+    // to drop it on.
+    // Not the left one: adding a page before the one on screen would shift the pager under the finger.
     // Unfolded, tile pages show in pairs and a face across both halves: the pager counts slots (see slotsOf).
     val per = if (showsTwoPages(windowSize())) 2 else 1
     val pageNumbers =
-        engine.pages
-            .let { if (LauncherStyle.sparePages) listOf(minOf(it.first(), FACE_PAGE + 1) - 1) + it else it }
-            .let { it.ifEmpty { listOf(1) } }
-            .let { if (!LauncherStyle.sparePages || engine.itemsOn(it.last()).isEmpty()) it else it + (it.last() + 1) }
+        pagerPages(
+            engine.pages,
+            lastEmpty = engine.itemsOn(engine.pages.last()).isEmpty(),
+            emptyPageLeft = LauncherStyle.emptyPageLeft,
+            emptyPageRight = LauncherStyle.emptyPageRight || arrange.carry != null,
+        )
     // Only faces on screen, or the empty one waiting left of them: they get it whole, the bar's room too (see
     // LauncherState.faceShowing), and the status bar's while all of them say statusBar: false.
     fun faceOn(page: Int?) = page?.let { engine.layout.owner(engine.itemsOn(it)) as? WidgetItem }?.takeIf { it.isFace }
@@ -155,6 +160,16 @@ fun HomeScreen(
                 "linux" -> state.show(SettingsPage.Linux)
                 "drawer" -> state.open()
                 "settings" -> state.show()
+                // "page:0": turns home to that page, a face left of page 1 too, as Super+1…9 does. What covers home
+                // closes first, as for Home pressed, so the page is seen: a widget's screen, the drawer, a panel.
+                else ->
+                    action.removePrefix("page:").takeIf { it != action }?.toIntOrNull()?.let {
+                        state.close()
+                        state.closePull()
+                        state.closeScreens()
+                        engine.openScreen = null
+                        state.requestedPage = it
+                    }
             }
         }
     }
@@ -446,6 +461,15 @@ fun HomeScreen(
                     }
                 }
             },
+            invite = {
+                WidgetInvite(runtime.agents.default?.name, onBrowse = { state.show(SettingsPage.Store) }) {
+                    if (linuxState == LinuxState.Installed) {
+                        state.withAgent(runtime, "New widget") { newOwlCommand(it, OwlKind.Widget) }
+                    } else {
+                        state.show(SettingsPage.Linux)
+                    }
+                }
+            },
             // Home turns to where a tile the user just added went; a shipped one that doesn't fit, as on a short
             // screen's first home, moves without taking home off page 1.
             onNoRoom = { item ->
@@ -513,6 +537,53 @@ private fun FaceInvite(
             }
         }
     }
+}
+
+/**
+ * An empty tile page, the one after the last or page 1 of an empty home: in [FaceInvite]'s style, an invitation to
+ * have [agent] build a widget, or to take one from the store.
+ */
+@Composable
+private fun WidgetInvite(
+    agent: String?,
+    onBrowse: () -> Unit,
+    onCreate: () -> Unit,
+) {
+    Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+        Column(
+            Modifier
+                .widthIn(max = 360.dp)
+                .frame(1.dp, Palette.border, Palette.background.copy(alpha = 0.85f))
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            BasicText("room for widgets", style = Mono.copy(color = Palette.accent))
+            BasicText(
+                "Nothing on this page yet. Fill it with widgets: a clock, the weather, a todo list, your agents at work. " +
+                    "Say what you want and ${agent ?: "an agent"} builds it.",
+                style = Mono,
+            )
+            Column(Modifier.offset(x = (-8).dp)) {
+                BracketAction("create with ${agent?.lowercase() ?: "an agent"}", Palette.accent, onClick = onCreate)
+                BracketAction("browse store", Palette.accent, onClick = onBrowse)
+            }
+        }
+    }
+}
+
+/**
+ * Home's page numbers as the pager has them: [pages], with the empty page waiting left of the leftmost for a new face
+ * when [emptyPageLeft], and one after the last when [emptyPageRight], for tiles, unless that one is empty already
+ * ([lastEmpty]). Neither (both settings off, no tile carried) leaves only [pages], so home ends at its own pages.
+ */
+internal fun pagerPages(
+    pages: List<Int>,
+    lastEmpty: Boolean,
+    emptyPageLeft: Boolean,
+    emptyPageRight: Boolean,
+): List<Int> {
+    val withFace = if (emptyPageLeft) listOf(minOf(pages.first(), FACE_PAGE + 1) - 1) + pages else pages
+    return if (!emptyPageRight || lastEmpty) withFace else withFace + (withFace.last() + 1)
 }
 
 /**

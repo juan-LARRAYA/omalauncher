@@ -138,9 +138,10 @@ fun StyleScreen(
             Flag("icons", "monochrome", "colored", style, Style.MONOCHROME_ICONS)
             Flag("home apps", "boxed", "icon only", style, Style.APP_TILES)
             Flag("recent apps", "shown", "hidden", style, Style.RECENT_APPS)
+            Flag("empty page left", "shown", "hidden", style, Style.EMPTY_PAGE_LEFT)
+            Flag("empty page right", "shown", "hidden", style, Style.EMPTY_PAGE_RIGHT)
             CountOption("columns", Style.COLUMNS, style)
             Flag("pages", "one", "auto", style, Style.FORCE_SINGLE_PAGE)
-            Flag("spare pages", "kept", "hidden", style, Style.SPARE_PAGES)
             NumberOption("corners", Corners.entries.map { it.label to it.scale.toDouble() }, Style.CORNER_SCALE, style)
             HomePreview(runtime)
             // Like Hyprland's gaps_in, gaps_out and border_size; the colors are in style.toml.
@@ -643,9 +644,8 @@ private fun Heading(
     text: String,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
-    Row(Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        BasicText(text, Modifier.weight(1f), style = Mono.copy(color = Palette.accent), softWrap = false)
-        actions()
+    ActionsRow(Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 6.dp), actions) {
+        BasicText(text, style = Mono.copy(color = Palette.accent), softWrap = false)
     }
 }
 

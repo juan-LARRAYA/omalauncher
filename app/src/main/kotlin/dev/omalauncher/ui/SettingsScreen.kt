@@ -11,13 +11,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.focus.FocusRequester
@@ -99,12 +100,23 @@ fun SettingsScreen(
                 },
                 Triple("licenses", "open source software in Omalauncher", onLicenses),
             )
-        UpdatesBox(runtime, installed)
-        if (installed) SetupUpdates(runtime)
-        // The local network row goes once it's granted: keys on it go on to the next.
-        val next = remember { FocusRequester() }
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(rows, key = { it.first }) { (title, subtitle, onClick) ->
+        // The updates scroll with the rows: at a large Android font size a long list of them would leave the rows a strip.
+        // Not lazy: scrolled out and back, the updates would check again.
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            UpdatesBox(runtime, installed)
+            if (installed) SetupUpdates(runtime)
+            SettingsRows(rows)
+        }
+    }
+}
+
+@Composable
+private fun SettingsRows(rows: List<Triple<String, String, () -> Unit>>) {
+    // The local network row goes once it's granted: keys on it go on to the next.
+    val next = remember { FocusRequester() }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        for ((title, subtitle, onClick) in rows) {
+            key(title) {
                 Row(
                     when (title) {
                         "local network" -> Modifier.passesKeys(next)
