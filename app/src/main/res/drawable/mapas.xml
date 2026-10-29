@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Mapas (MapsActivity): a folded map with a route and a pin; the same drawing as phone/apps/mapas/web/icono.svg. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:fillColor="#FF1F6F5C"
+        android:pathData="M14,0 H50 A14,14 0 0,1 64,14 V50 A14,14 0 0,1 50,64 H14 A14,14 0 0,1 0,50 V14 A14,14 0 0,1 14,0 Z" />
+    <path
+        android:fillColor="#FFEEF3F1"
+        android:pathData="M12,18 L25,13 L39,18 L52,13 V46 L39,51 L25,46 L12,51 Z" />
+    <path
+        android:fillColor="#FFC9D6D1"
+        android:pathData="M24.25,13.3 h1.5 v33 h-1.5 Z M38.25,18 h1.5 v33 h-1.5 Z" />
+    <path
+        android:fillColor="#FF1F6F5C"
+        android:pathData="M15.4,42 a1.6,1.6 0 1,0 3.2,0 a1.6,1.6 0 1,0 -3.2,0 M19.4,40.4 a1.6,1.6 0 1,0 3.2,0 a1.6,1.6 0 1,0 -3.2,0 M23.0,37.2 a1.6,1.6 0 1,0 3.2,0 a1.6,1.6 0 1,0 -3.2,0 M26.799999999999997,32.6 a1.6,1.6 0 1,0 3.2,0 a1.6,1.6 0 1,0 -3.2,0 M31.4,30.6 a1.6,1.6 0 1,0 3.2,0 a1.6,1.6 0 1,0 -3.2,0 M36.0,30.8 a1.6,1.6 0 1,0 3.2,0 a1.6,1.6 0 1,0 -3.2,0 M40.0,28.6 a1.6,1.6 0 1,0 3.2,0 a1.6,1.6 0 1,0 -3.2,0" />
+    <path
+        android:fillColor="#FFE8590C"
+        android:pathData="M44,10 C39,10 36,13.6 36,18 C36,23.6 44,31 44,31 C44,31 52,23.6 52,18 C52,13.6 49,10 44,10 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M41,18 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+</vector>

@@ -17,6 +17,9 @@
     <uses-permission android:name="android.permission.READ_DROPBOX_DATA" tools:ignore="ProtectedPermissions" />
     <!-- Speech input for the agent prompt bar; only recognized text reaches Linux. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Only Mapas asks for it, the first time its page wants the phone's location. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <!-- Ctrl+V in Linux pastes the latest screenshot when nothing is copied (GuestClipboard); granted in Android's settings. -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
@@ -94,6 +97,24 @@
             android:theme="@style/Theme.Omalauncher.Dialog">
             <intent-filter>
                 <action android:name="android.content.pm.action.CONFIRM_PIN_SHORTCUT" />
+            </intent-filter>
+        </activity>
+
+        <!-- Mapas (phone/apps/mapas): the guest's maps service in a window of its own, listed in the drawer. -->
+        <activity
+            android:name=".MapsActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|uiMode"
+            android:exported="true"
+            android:icon="@drawable/mapas"
+            android:label="Mapas"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true"
+            android:taskAffinity="dev.omalauncher.mapas"
+            android:theme="@style/Theme.Omalauncher.Window"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
