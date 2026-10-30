@@ -10,6 +10,11 @@
         <item name="android:windowBackground">#FF1A1B26</item>
     </style>
 
+    <!-- Mapas: MapLibre's view is built of AppCompat widgets. -->
+    <style name="Theme.Omalauncher.Maps" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
+
     <!-- Only a dialog shows, over the app that opened it. -->
     <style name="Theme.Omalauncher.Dialog" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@android:color/transparent</item>

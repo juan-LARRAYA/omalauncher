@@ -70,7 +70,11 @@ tasks.withType<Test>().configureEach { inputs.dir("src/main/assets/widgets") }
 // Gitignored, built by scripts/fetch-proot.sh. Without it a release still builds, but every Linux command fails.
 tasks.matching { it.name == "preReleaseBuild" }.configureEach {
     val proot = file("src/main/jniLibs/arm64-v8a/libproot.so")
-    doFirst { check(proot.exists()) { "$proot is missing; run scripts/fetch-proot.sh" } }
+    val mapas = file("src/main/jniLibs/arm64-v8a/libmapas_core.so")
+    doFirst {
+        check(proot.exists()) { "$proot is missing; run scripts/fetch-proot.sh" }
+        check(mapas.exists()) { "$mapas is missing; run scripts/build-mapas-core.sh" }
+    }
 }
 
 composeCompiler {
@@ -85,6 +89,8 @@ dependencies {
     implementation(libs.commons.compress)
     implementation(libs.androidsvg)
     implementation(libs.zxing.core)
+    implementation(libs.maplibre.android)
+    implementation(libs.androidx.appcompat)
     implementation(project(":owl"))
     testImplementation(libs.junit)
     // android.jar only has stubs of org.json.

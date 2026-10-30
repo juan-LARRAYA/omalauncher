@@ -17,7 +17,7 @@
     <uses-permission android:name="android.permission.READ_DROPBOX_DATA" tools:ignore="ProtectedPermissions" />
     <!-- Speech input for the agent prompt bar; only recognized text reaches Linux. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <!-- Only Mapas asks for it, the first time its page wants the phone's location. -->
+    <!-- Only Mapas asks for it, to show where you are and to start a route from there. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
@@ -100,7 +100,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Mapas (phone/apps/mapas): the guest's maps service in a window of its own, listed in the drawer. -->
+        <!-- Mapas (phone/apps/mapas): native, listed in the drawer. A process of its own: a crash in the map can't take home and Linux down. -->
         <activity
             android:name=".MapsActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|uiMode"
@@ -108,9 +108,10 @@
             android:icon="@drawable/mapas"
             android:label="Mapas"
             android:launchMode="singleTask"
+            android:process=":mapas"
             android:resizeableActivity="true"
             android:taskAffinity="dev.omalauncher.mapas"
-            android:theme="@style/Theme.Omalauncher.Window"
+            android:theme="@style/Theme.Omalauncher.Maps"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

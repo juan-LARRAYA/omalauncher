@@ -640,9 +640,6 @@ class Runtime(
         InstantActivity.startInstantly(context, EditorActivity.intent(context, path, done))
     }
 
-    /** Whether Linux is up, so [launch] runs a command rather than opening Linux's settings. */
-    val linuxUp get() = linux
-
     /** Starts a command inside the guest; its output goes to logcat. Returns at once; [onExit] runs on the launch thread. */
     fun launch(
         command: String,
