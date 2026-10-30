@@ -35,6 +35,7 @@ jobs:
           ndk=$(sed -n 's/^NDK_VERSION=//p' scripts/fetch-proot.sh)
           [ -d "$ANDROID_HOME/ndk/$ndk" ] || yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" >/dev/null
           ./scripts/fetch-proot.sh
+          ./scripts/build-mapas-core.sh
 
       - name: "Tests (a failure stops here, nothing is published)"
         run: ./gradlew :owl:test :app:testDebugUnitTest
