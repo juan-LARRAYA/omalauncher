@@ -41,16 +41,19 @@ jobs:
 
       - name: Report a merge conflict
         if: steps.ahead.outputs.ahead == 'yes' && steps.merge.outputs.ok == 'no'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        # One issue per upstream version (GitHub mails it once): the daily runs after the first stay quiet instead of
-        # failing red and mailing every day. The open issue is the marker; if creating it fails, the run is red.
+        # Red (and mailed) only the first day an upstream version fails to merge; later runs stay green with a
+        # warning. A tag is the marker because the workflow token cannot create issues in this fork
+        # ("Resource not accessible by integration").
         run: |
-          title="Upstream ${{ steps.ahead.outputs.up }} does not merge into juan"
-          if [ -z "$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[].number')" ]; then
-            gh issue create --title "$title" --body "The personal patches conflict with upstream ${{ steps.ahead.outputs.up }}. Merge it by hand (git fetch upstream, then git merge upstream/main on juan). Nothing was published."
+          marker="conflict-upstream-${{ steps.ahead.outputs.up }}"
+          if git ls-remote --exit-code --tags origin "$marker" >/dev/null 2>&1; then
+            echo "::warning::Upstream ${{ steps.ahead.outputs.up }} still does not merge into juan; merge it by hand."
+            exit 0
           fi
-          exit 0
+          git tag "$marker"
+          git push origin "$marker"
+          echo "::error::Upstream ${{ steps.ahead.outputs.up }} conflicts with the personal patches. Merge it by hand (git fetch upstream, then git merge upstream/main on juan). Nothing was published."
+          exit 1
 
       - uses: actions/setup-java@v4
         if: steps.merge.outputs.ok == 'yes'
