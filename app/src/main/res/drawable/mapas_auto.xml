@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Mapas while driving: a car seen from above, its nose up; the map turns it to the GPS heading. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="44dp"
+    android:height="44dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M18,2 H30 C35,2 37,6 37,11 V37 C37,43 34,46 29,46 H19 C14,46 11,43 11,37 V11 C11,6 13,2 18,2 Z" />
+    <path
+        android:fillColor="#FF1F6F5C"
+        android:pathData="M19,5 H29 C33,5 34,8 34,12 V36 C34,41 32,43 28,43 H20 C16,43 14,41 14,36 V12 C14,8 15,5 19,5 Z" />
+    <path
+        android:fillColor="#FFCFE8E0"
+        android:pathData="M17,17 C21,14.5 27,14.5 31,17 L29,24 C26,23 22,23 19,24 Z" />
+    <path
+        android:fillColor="#FFCFE8E0"
+        android:pathData="M19,34 C22,35 26,35 29,34 L30.5,38.5 C26.5,40 21.5,40 17.5,38.5 Z" />
+</vector>

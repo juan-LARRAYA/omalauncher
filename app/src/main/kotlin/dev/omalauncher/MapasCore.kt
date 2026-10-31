@@ -30,4 +30,13 @@ object MapasCore {
         day: Int,
         now: Double,
     ): String
+
+    /** Starts guiding along the last [car] route; false if there's none. */
+    external fun guideStart(): Boolean
+
+    /** A new GPS fix: the next turn, what's left, and whether the route was left. */
+    external fun guideUpdate(
+        lat: Double,
+        lon: Double,
+    ): String
 }

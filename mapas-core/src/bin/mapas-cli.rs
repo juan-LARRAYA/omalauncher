@@ -16,7 +16,13 @@ fn main() {
     for line in std::io::stdin().lock().lines() {
         let req: Value = serde_json::from_str(&line.unwrap()).unwrap();
         let t = Instant::now();
-        let res = if let Some(q) = req["q"].as_str() {
+        let res = if !req["p"].is_null() {
+            let p = point(&req["p"]);
+            if req["inicio"].as_bool() == Some(true) {
+                engine.guide_start();
+            }
+            engine.guide_update(p.0, p.1).map(Some)
+        } else if let Some(q) = req["q"].as_str() {
             engine.search(q, req["lat"].as_f64().zip(req["lon"].as_f64())).map(Some)
         } else if req["dia"].is_null() {
             engine.car(point(&req["a"]), point(&req["b"]))

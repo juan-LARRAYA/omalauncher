@@ -2,7 +2,7 @@
 
 use crate::Engine;
 use jni::objects::{JClass, JString};
-use jni::sys::{jdouble, jint, jstring};
+use jni::sys::{jboolean, jdouble, jint, jstring};
 use jni::JNIEnv;
 use serde_json::{json, Value};
 use std::sync::Mutex;
@@ -49,5 +49,16 @@ pub extern "system" fn Java_dev_omalauncher_MapasCore_car(mut env: JNIEnv, _: JC
 #[no_mangle]
 pub extern "system" fn Java_dev_omalauncher_MapasCore_transit(mut env: JNIEnv, _: JClass, lat1: jdouble, lon1: jdouble, lat2: jdouble, lon2: jdouble, day: jint, now: jdouble) -> jstring {
     let r = with_engine(|e| e.transit((lat1, lon1), (lat2, lon2), day as usize, now));
+    answer(&mut env, r)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_omalauncher_MapasCore_guideStart(_: JNIEnv, _: JClass) -> jboolean {
+    with_engine(|e| Ok(e.guide_start())).unwrap_or(false) as jboolean
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_omalauncher_MapasCore_guideUpdate(mut env: JNIEnv, _: JClass, lat: jdouble, lon: jdouble) -> jstring {
+    let r = with_engine(|e| e.guide_update(lat, lon)).map(Some);
     answer(&mut env, r)
 }

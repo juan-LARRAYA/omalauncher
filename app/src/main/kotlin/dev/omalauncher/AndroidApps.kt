@@ -534,8 +534,7 @@ class AndroidAppCatalog(
                                 runCatching { launcherApps.getActivityList(null, user) }
                                     .onFailure { Log.w(TAG, "cannot list apps in $user", it) }
                                     .getOrDefault(emptyList())
-                                    // The launcher's own activities stay out, except Mapas, an app of its own.
-                                    .filter { it.componentName.packageName != context.packageName || it.componentName.className == MapsActivity::class.java.name }
+                                    .filter { it.componentName.packageName != context.packageName }
                                     .map { it to AndroidApp(it.label.toString(), it.componentName, user, profile, it.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0, clone = clone) }
                             }
                             // The same app in two profiles: the owner's one first.

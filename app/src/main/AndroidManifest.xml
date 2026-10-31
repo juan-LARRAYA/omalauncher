@@ -100,7 +100,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Mapas (phone/apps/mapas): native, listed in the drawer. A process of its own: a crash in the map can't take home and Linux down. -->
+        <!-- Mapas (phone/apps/mapas): opened from the guest's `mapas` entry (Runtime.launch). A process of its own: a crash in the map can't take home and Linux down. -->
         <activity
             android:name=".MapsActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|uiMode"

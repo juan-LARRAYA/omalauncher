@@ -4,7 +4,11 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.graphics.Color as AndroidColor
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -51,6 +55,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -62,6 +68,10 @@ import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.location.LocationComponentActivationOptions
+import org.maplibre.android.location.LocationComponentOptions
+import org.maplibre.android.location.OnCameraTrackingChangedListener
+import org.maplibre.android.location.modes.CameraMode
+import org.maplibre.android.location.modes.RenderMode
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
@@ -76,7 +86,10 @@ private data class Place(val name: String, val detail: String, val lat: Double, 
 
 private class Step(val title: String, val detail: String, val color: Color?)
 
-private class Trip(val time: String, val summary: String, val note: String, val steps: List<Step>)
+private class Trip(val time: String, val summary: String, val note: String, val steps: List<Step>, val canDrive: Boolean = false)
+
+/** What the screen shows while driving. */
+private class Drive(val sentence: String, val turn: String, val toTurn: Long, val left: Long, val seconds: Long)
 
 private val Ink = Color(0xFF1B1D1C)
 private val Muted = Color(0xFF5D6662)
@@ -98,6 +111,12 @@ class MapsActivity : ComponentActivity() {
     private var map: MapLibreMap? = null
     private var loadedStyle: Style? = null
     private var locationOn = false
+    private val ui = MainScope()
+    private var lastReroute = 0L
+
+    private var drive by mutableStateOf<Drive?>(null)
+    private var following by mutableStateOf(true)
+    private val onFix = LocationListener { fix -> onDriveFix(fix) }
 
     private var origin by mutableStateOf<Place?>(null)
     private var destination by mutableStateOf<Place?>(null)
@@ -124,6 +143,11 @@ class MapsActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val crash = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            log("falló: ${error.stackTraceToString()}")
+            crash?.uncaughtException(thread, error)
+        }
         log("abre: datos en $data")
         val missing = REQUIRED.filterNot { File(data, it).exists() }
         if (missing.isNotEmpty()) {
@@ -192,9 +216,19 @@ class MapsActivity : ComponentActivity() {
         val (m, style) = (map ?: return) to (loadedStyle ?: return)
         if (locationOn || !hasLocation()) return
         runCatching {
-            val options = LocationComponentActivationOptions.builder(this, style).useDefaultLocationEngine(true).build()
+            val look = LocationComponentOptions.builder(this).gpsDrawable(R.drawable.mapas_auto).build()
+            val options = LocationComponentActivationOptions.builder(this, style).locationComponentOptions(look).useDefaultLocationEngine(true).build()
             m.locationComponent.activateLocationComponent(options)
             m.locationComponent.isLocationComponentEnabled = true
+            m.locationComponent.addOnCameraTrackingChangedListener(
+                object : OnCameraTrackingChangedListener {
+                    override fun onCameraTrackingDismissed() {
+                        following = false
+                    }
+
+                    override fun onCameraTrackingChanged(currentMode: Int) = Unit
+                },
+            )
             locationOn = true
         }.onFailure { log("ubicación: $it") }
     }
@@ -275,9 +309,9 @@ class MapsActivity : ComponentActivity() {
         val secs = r.getLong("segundos")
         val features = JSONArray().put(feature("LineString", r.getJSONArray("coords"), "auto", "#1f6f5c"))
         loadedStyle?.getSourceAs<GeoJsonSource>(ROUTE)?.setGeoJson(collection(features))
-        val steps = r.getJSONArray("pasos").objects().map { Step(it.getString("calle"), distance(it.getLong("metros")), null) }
+        val steps = r.getJSONArray("pasos").objects().map { Step(it.getString("calle"), "${ARROW[it.getString("giro")] ?: "↑"} ${distance(it.getLong("metros"))}", null) }
         trip = Trip(duration(secs), "${distance(r.getLong("metros"))} en auto · llegás ${now.plusSeconds(secs).format(CLOCK)}",
-            "Sin tránsito ni giros prohibidos: el tiempo es aproximado.", steps)
+            "Sin tránsito ni giros prohibidos: el tiempo es aproximado.", steps, canDrive = true)
     }
 
     private fun showTransit(r: JSONObject, now: LocalDateTime) {
@@ -306,6 +340,118 @@ class MapsActivity : ComponentActivity() {
             "Esperas según la frecuencia de cada línea. Datos abiertos de la Ciudad (colectivos 2019, trenes 2020, subte 2023): aproximados.", steps)
     }
 
+    /** Starts driving: a route from where you are, the camera behind the car, tilted, and the next turn on top. */
+    @SuppressLint("MissingPermission")
+    private fun startDrive() {
+        val me = myPlace()
+        val to = destination
+        if (me == null || to == null) {
+            message = "Todavía no tengo tu ubicación: esperá a que el GPS te encuentre."
+            return
+        }
+        ui.launch {
+            val r = JSONObject(withContext(Dispatchers.IO) { MapasCore.car(me.lat, me.lon, to.lat, to.lon) })
+            if (r.has("error") || !withContext(Dispatchers.IO) { MapasCore.guideStart() }) {
+                log("manejo: $r")
+                message = "No encontré un camino en auto."
+                return@launch
+            }
+            showCar(r, LocalDateTime.now(ZONE))
+            drive = Drive("Calculando…", "recto", 0, r.getLong("metros"), r.getLong("segundos"))
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            driveLook(true)
+            follow()
+            getSystemService(LocationManager::class.java).requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, onFix, mainLooper)
+            log("manejo: empieza, ${r.getLong("metros")} m")
+        }
+    }
+
+    private fun follow() {
+        val lc = map?.locationComponent ?: return
+        following = true
+        lc.cameraMode = CameraMode.TRACKING_GPS
+        lc.renderMode = RenderMode.GPS
+        lc.zoomWhileTracking(DRIVE_ZOOM)
+        lc.tiltWhileTracking(DRIVE_TILT)
+        lc.paddingWhileTracking(doubleArrayOf(0.0, resources.displayMetrics.heightPixels * 0.45, 0.0, 0.0))
+    }
+
+    /** While driving the route is thicker and the shops' names go: the map is read at a glance. */
+    private fun driveLook(on: Boolean) {
+        val style = loadedStyle ?: return
+        style.getLayer("pois")?.setProperties(PropertyFactory.visibility(if (on) Property.NONE else Property.VISIBLE))
+        style.getLayer("ruta-borde")?.setProperties(PropertyFactory.lineWidth(if (on) 15f else 9f))
+        style.getLayer("ruta")?.setProperties(PropertyFactory.lineWidth(if (on) 11f else 5f))
+    }
+
+    private fun onDriveFix(fix: Location) {
+        ui.launch {
+            val v = JSONObject(withContext(Dispatchers.IO) { MapasCore.guideUpdate(fix.latitude, fix.longitude) })
+            if (v.has("error")) return@launch log("manejo: $v")
+            if (v.getBoolean("llego")) {
+                stopDrive()
+                message = "Llegaste."
+                return@launch
+            }
+            drive = Drive(v.getString("texto"), v.getString("giro"), v.getLong("metros"), v.getLong("restante_m"), v.getLong("restante_s"))
+            val now = System.currentTimeMillis()
+            if (v.getBoolean("fuera") && now - lastReroute > REROUTE_MS) {
+                lastReroute = now
+                reroute(fix)
+            }
+        }
+    }
+
+    /** Off the route: a new one from here, without leaving the driving view. */
+    private suspend fun reroute(fix: Location) {
+        val to = destination ?: return
+        log("manejo: recalculo")
+        val r = JSONObject(withContext(Dispatchers.IO) { MapasCore.car(fix.latitude, fix.longitude, to.lat, to.lon) })
+        if (r.has("error") || !withContext(Dispatchers.IO) { MapasCore.guideStart() }) return
+        showCar(r, LocalDateTime.now(ZONE))
+    }
+
+    private fun stopDrive() {
+        drive = null
+        runCatching { getSystemService(LocationManager::class.java).removeUpdates(onFix) }
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        driveLook(false)
+        val m = map ?: return
+        runCatching {
+            m.locationComponent.paddingWhileTracking(doubleArrayOf(0.0, 0.0, 0.0, 0.0))
+            m.locationComponent.cameraMode = CameraMode.NONE
+            m.locationComponent.renderMode = RenderMode.NORMAL
+        }
+        m.animateCamera(CameraUpdateFactory.newCameraPosition(CameraPosition.Builder(m.cameraPosition).tilt(0.0).bearing(0.0).zoom(14.0).build()))
+    }
+
+    @Composable
+    private fun DriveScreen(d: Drive) {
+        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+            Row(Modifier.padding(10.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Accent).padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                BasicText(ARROW[d.turn] ?: "↑", style = TextStyle(fontSize = 40.sp, color = Color.White, fontWeight = FontWeight.Bold))
+                Column(Modifier.weight(1f)) {
+                    BasicText(if (d.toTurn > 0) "En ${distance(d.toTurn)}" else "", style = TextStyle(fontSize = 22.sp, color = Color.White, fontWeight = FontWeight.Bold))
+                    BasicText(d.sentence, style = TextStyle(fontSize = 17.sp, color = Color.White))
+                }
+            }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                if (!following) {
+                    BasicText("Centrar", Modifier.align(Alignment.BottomCenter).padding(12.dp).clip(RoundedCornerShape(22.dp)).background(Color.White).clickable { follow() }
+                        .padding(horizontal = 22.dp, vertical = 11.dp), style = TextStyle(fontSize = 16.sp, color = Accent, fontWeight = FontWeight.Bold))
+                }
+            }
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)).background(Color.White).padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                BasicText(duration(d.seconds), style = TextStyle(fontSize = 23.sp, color = Accent, fontWeight = FontWeight.Bold))
+                BasicText("${distance(d.left)} · llegás ${LocalDateTime.now(ZONE).plusSeconds(d.seconds).format(CLOCK)}", Modifier.weight(1f), style = TextStyle(fontSize = 15.sp, color = Muted))
+                BasicText("Salir", Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFFC2410C)).clickable { stopDrive() }.padding(horizontal = 16.dp, vertical = 10.dp),
+                    style = TextStyle(fontSize = 16.sp, color = Color.White, fontWeight = FontWeight.Bold))
+            }
+        }
+    }
+
     private fun fit(coords: JSONArray) {
         val points = (0 until coords.length()).map { coords.getJSONArray(it).let { c -> LatLng(c.getDouble(1), c.getDouble(0)) } }
         if (points.size < 2) return
@@ -317,13 +463,19 @@ class MapsActivity : ComponentActivity() {
     @Composable
     private fun Screen() {
         val scope = rememberCoroutineScope()
-        BackHandler(enabled = trip != null || results.isNotEmpty() || pressed != null) {
+        BackHandler(enabled = drive != null || trip != null || results.isNotEmpty() || pressed != null) {
             pressed = null
-            if (results.isNotEmpty()) results.clear() else clearTrip()
+            when {
+                drive != null -> stopDrive()
+                results.isNotEmpty() -> results.clear()
+                else -> clearTrip()
+            }
         }
         Box(Modifier.fillMaxSize()) {
             AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
-            Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+            val driving = drive
+            if (driving != null) DriveScreen(driving)
+            else Column(Modifier.fillMaxSize().safeDrawingPadding()) {
                 Column(Modifier.padding(10.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color.White).padding(horizontal = 12.dp, vertical = 4.dp)) {
                     Field("desde", fromText, "Mi ubicación", Color(0xFF2B6CB0)) { fromText = it }
                     Field("hasta", toText, "¿Adónde vas?", Color(0xFFC2410C)) { toText = it }
@@ -414,7 +566,12 @@ class MapsActivity : ComponentActivity() {
                 return@LaunchedEffect
             }
             results.clear()
-            results.addAll(JSONArray(found).objects().map { Place(it.getString("nombre"), it.getString("tipo"), it.getDouble("lat"), it.getDouble("lon")) })
+            results.addAll(
+                JSONArray(found).objects().map {
+                    val place = it.optString("detalle").takeIf { d -> d.isNotEmpty() && d != "null" }
+                    Place(it.getString("nombre"), listOfNotNull(it.getString("tipo"), place).joinToString(" · "), it.getDouble("lat"), it.getDouble("lon"))
+                },
+            )
             if (results.isEmpty()) message = "Sin resultados en el mapa del teléfono."
         }
     }
@@ -442,6 +599,12 @@ class MapsActivity : ComponentActivity() {
                 BasicText("✕", Modifier.clickable { clearTrip() }.padding(8.dp), style = TextStyle(fontSize = 18.sp, color = Muted))
             }
             BasicText(t.note, Modifier.padding(vertical = 6.dp), style = TextStyle(fontSize = 13.sp, color = Muted))
+            if (t.canDrive) {
+                Box(Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(RoundedCornerShape(12.dp)).background(Accent).clickable { startDrive() }.padding(vertical = 12.dp),
+                    contentAlignment = Alignment.Center) {
+                    BasicText("Iniciar", style = TextStyle(fontSize = 18.sp, color = Color.White, fontWeight = FontWeight.Bold))
+                }
+            }
             for (s in t.steps) {
                 Row(Modifier.padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Box(Modifier.size(width = 4.dp, height = 34.dp).background(s.color ?: Line))
@@ -485,6 +648,8 @@ class MapsActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        ui.cancel()
+        runCatching { getSystemService(LocationManager::class.java).removeUpdates(onFix) }
         if (::mapView.isInitialized) mapView.onDestroy()
         super.onDestroy()
     }
@@ -493,6 +658,10 @@ class MapsActivity : ComponentActivity() {
         val ZONE: ZoneId = ZoneId.of("America/Argentina/Buenos_Aires")
         val CLOCK: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
         val STAMP: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+        const val DRIVE_ZOOM = 17.5
+        const val DRIVE_TILT = 60.0
+        const val REROUTE_MS = 15_000L
+        val ARROW = mapOf("izquierda" to "↰", "derecha" to "↱", "leve-izquierda" to "↖", "leve-derecha" to "↗", "retoma" to "↶", "destino" to "◎", "salida" to "↑", "recto" to "↑")
         const val ROUTE = "ruta"
         const val POINTS = "extremos"
         val REQUIRED = listOf("style.json", "buenos-aires.pmtiles", "busqueda.sqlite", "grafo-auto.bin", "transporte.bin")

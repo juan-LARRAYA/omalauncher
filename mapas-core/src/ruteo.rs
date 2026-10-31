@@ -14,6 +14,34 @@ pub(crate) fn dist_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     6_371_000.0 * x.hypot(y)
 }
 
+fn bearing(a: [f64; 2], b: [f64; 2]) -> f64 {
+    let x = (b[0] - a[0]) * a[1].to_radians().cos();
+    x.atan2(b[1] - a[1]).to_degrees()
+}
+
+/// Going from one heading to another, in the words the guide uses. Positive is to the right.
+fn turn_word(from: f64, to: f64) -> &'static str {
+    let d = (to - from + 540.0).rem_euclid(360.0) - 180.0;
+    match d {
+        d if d.abs() < 25.0 => "recto",
+        d if d.abs() >= 150.0 => "retoma",
+        d if d.abs() < 60.0 => if d > 0.0 { "leve-derecha" } else { "leve-izquierda" },
+        d => if d > 0.0 { "derecha" } else { "izquierda" },
+    }
+}
+
+/// The point at least 15 m before `at`: a few metres of curve at a corner would say the wrong heading.
+fn before(line: &[[f64; 2]], at: usize) -> [f64; 2] {
+    let p = line[at];
+    line[..at].iter().rev().find(|q| dist_m(q[1], q[0], p[1], p[0]) >= 15.0).copied().unwrap_or(line[0])
+}
+
+/// The point at least 15 m after `at`, along the line.
+fn after(line: &[[f64; 2]], at: usize) -> [f64; 2] {
+    let p = line[at];
+    line[at + 1..].iter().find(|q| dist_m(q[1], q[0], p[1], p[0]) >= 15.0).copied().unwrap_or(*line.last().unwrap_or(&p))
+}
+
 struct Item {
     priority: f64,
     cost: f64,
@@ -137,11 +165,12 @@ impl Router {
         let names = f.slice::<i32>("names");
         let streets = f.texts("calle");
         let mut line = vec![[a.1, a.0]];
-        let mut steps: Vec<(String, f64)> = Vec::new();
+        let mut steps: Vec<(String, f64, usize)> = Vec::new(); // street, metres, index in the line where it starts
         let mut distance = 0.0;
         for &k in edges {
             let e = edge[k] as usize;
             let c = &coords[geom_first[e] as usize..geom_first[e + 1] as usize];
+            let start = line.len() - 1;
             line.extend(c.chunks_exact(2).map(|p| [p[1], p[0]]));
             let name = match streets.get(names[e] as usize) {
                 "" => "calle sin nombre",
@@ -151,12 +180,30 @@ impl Router {
             distance += m;
             match steps.last_mut() {
                 Some(last) if last.0 == name => last.1 += m,
-                _ => steps.push((name.to_string(), m)),
+                _ => steps.push((name.to_string(), m, start)),
             }
         }
         line.push([b.1, b.0]);
-        let pasos: Vec<Value> = steps.iter().map(|(c, m)| json!({"calle": c, "metros": m.round() as i64})).collect();
+        let pasos: Vec<Value> = steps.iter().enumerate().map(|(i, (c, m, at))| {
+            let giro = if i == 0 { "salida" } else { turn_word(bearing(before(&line, *at), line[*at]), bearing(line[*at], after(&line, *at))) };
+            json!({"calle": c, "metros": m.round() as i64, "giro": giro, "indice": at})
+        }).collect();
         json!({"coords": line, "segundos": total.round() as i64, "metros": distance.round() as i64,
                "acercamiento_m": (d_src + d_dst).round() as i64, "pasos": pasos})
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::turn_word;
+
+    #[test]
+    fn names_the_turn_from_the_two_headings() {
+        assert_eq!(turn_word(0.0, 90.0), "derecha");
+        assert_eq!(turn_word(0.0, -90.0), "izquierda");
+        assert_eq!(turn_word(170.0, -100.0), "derecha"); // across south
+        assert_eq!(turn_word(10.0, 20.0), "recto");
+        assert_eq!(turn_word(0.0, 40.0), "leve-derecha");
+        assert_eq!(turn_word(0.0, 175.0), "retoma");
     }
 }

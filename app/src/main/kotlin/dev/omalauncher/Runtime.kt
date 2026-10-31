@@ -568,6 +568,8 @@ class Runtime(
         // Our own Files app: open it directly rather than round-tripping through the guest.
         if (app.exec == FILES_COMMAND) return openFiles()
         if (app.exec == EDIT_COMMAND) return edit()
+        // Mapas' entry in the guest (phone/apps/mapas) is the native app: no browser, and Linux needn't be up.
+        if (app.id == "mapas") return context.startActivity(Intent(context, MapsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         if (app.terminal) return terminal(app.exec, app.name)
         // Like an Android icon: an app that already has a window comes back to it. Single-instance
         // apps would otherwise just exit on a second launch, showing nothing. Quickshell apps (App Finder)

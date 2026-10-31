@@ -2,6 +2,7 @@
 
 mod bin_file;
 pub mod busqueda;
+pub mod guia;
 pub mod ruteo;
 pub mod transporte;
 
@@ -16,11 +17,13 @@ pub struct Engine {
     search: Option<busqueda::Search>,
     router: Option<ruteo::Router>,
     network: Option<transporte::Network>,
+    last_car: Option<Value>,
+    guide: Option<guia::Guide>,
 }
 
 impl Engine {
     pub fn new(dir: &str) -> Self {
-        Self { dir: dir.to_string(), search: None, router: None, network: None }
+        Self { dir: dir.to_string(), search: None, router: None, network: None, last_car: None, guide: None }
     }
 
     pub fn search(&mut self, q: &str, near: Option<(f64, f64)>) -> Result<Value, String> {
@@ -34,7 +37,18 @@ impl Engine {
         if self.router.is_none() {
             self.router = Some(ruteo::Router::open(&format!("{}/grafo-auto.bin", self.dir))?);
         }
-        Ok(self.router.as_ref().unwrap().route(a.0, a.1, b.0, b.1))
+        self.last_car = self.router.as_ref().unwrap().route(a.0, a.1, b.0, b.1);
+        Ok(self.last_car.clone())
+    }
+
+    /// Starts guiding along the last car route. False if there's none.
+    pub fn guide_start(&mut self) -> bool {
+        self.guide = self.last_car.as_ref().and_then(guia::Guide::new);
+        self.guide.is_some()
+    }
+
+    pub fn guide_update(&mut self, lat: f64, lon: f64) -> Result<Value, String> {
+        self.guide.as_mut().map(|g| g.update(lat, lon)).ok_or("sin guía".to_string())
     }
 
     pub fn transit(&mut self, a: (f64, f64), b: (f64, f64), day: usize, now: f64) -> Result<Option<Value>, String> {
