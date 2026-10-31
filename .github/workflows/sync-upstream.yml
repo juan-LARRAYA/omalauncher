@@ -43,14 +43,14 @@ jobs:
         if: steps.ahead.outputs.ahead == 'yes' && steps.merge.outputs.ok == 'no'
         env:
           GH_TOKEN: ${{ github.token }}
-        # One issue per upstream version (GitHub mails it): the daily runs after the first don't repeat it. The run
-        # still ends red, so a conflict is never silent.
+        # One issue per upstream version (GitHub mails it once): the daily runs after the first stay quiet instead of
+        # failing red and mailing every day. The open issue is the marker; if creating it fails, the run is red.
         run: |
           title="Upstream ${{ steps.ahead.outputs.up }} does not merge into juan"
           if [ -z "$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[].number')" ]; then
             gh issue create --title "$title" --body "The personal patches conflict with upstream ${{ steps.ahead.outputs.up }}. Merge it by hand (git fetch upstream, then git merge upstream/main on juan). Nothing was published."
           fi
-          exit 1
+          exit 0
 
       - uses: actions/setup-java@v4
         if: steps.merge.outputs.ok == 'yes'
