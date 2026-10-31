@@ -81,7 +81,10 @@ jobs:
           KS_PASS: ${{ secrets.KS_PASS }}
         run: |
           test -n "$KS_B64" || { echo "KS_B64/KS_PASS secrets are not set"; exit 1; }
-          ./gradlew :app:assembleRelease
+          # The launcher writes this tag at start: it's how the update tile knows what really runs.
+          tag="v${{ steps.ahead.outputs.up }}-juan.$(date +%Y%m%d%H%M)"
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          ./gradlew :app:assembleRelease -PreleaseTag="$tag"
           echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/juan.jks"
           apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
           "$apksigner" sign --ks "$RUNNER_TEMP/juan.jks" --ks-key-alias juan --ks-pass env:KS_PASS --key-pass env:KS_PASS \
@@ -96,7 +99,6 @@ jobs:
         run: |
           echo "${{ steps.ahead.outputs.up }}" > .upstream-base
           git add .upstream-base && git commit -qm "Synced with upstream ${{ steps.ahead.outputs.up }}"
-          tag="v${{ steps.ahead.outputs.up }}-juan.$(date +%Y%m%d%H%M)"
           git push origin HEAD:juan
-          gh release create "$tag" omalauncher-juan.apk --target juan --title "OmaLauncher ${{ steps.ahead.outputs.up }} (personal build)" \
+          gh release create "$TAG" omalauncher-juan.apk --target juan --title "OmaLauncher ${{ steps.ahead.outputs.up }} (personal build)" \
             --notes "Upstream ${{ steps.ahead.outputs.up }} merged into the personal patches; unit tests passed. Installing it updates the app in place and keeps Linux, widgets and layout."

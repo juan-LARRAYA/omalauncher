@@ -42,11 +42,17 @@ jobs:
 
       - name: Build and sign
         env:
+          GH_TOKEN: ${{ github.token }}
           KS_B64: ${{ secrets.KS_B64 }}
           KS_PASS: ${{ secrets.KS_PASS }}
         run: |
           test -n "$KS_B64" || { echo "KS_B64/KS_PASS secrets are not set"; exit 1; }
-          ./gradlew :app:assembleRelease
+          # The launcher writes this tag at start: it's how the update tile knows what really runs.
+          ver=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts | head -1)
+          last=$(gh release list -R "${{ github.repository }}" --limit 100 --json tagName --jq '[.[].tagName | capture("juan\\.b?(?<n>[0-9]+)$").n | tonumber] | max // 0')
+          tag="v$ver-juan.$((last + 1))"
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          ./gradlew :app:assembleRelease -PreleaseTag="$tag"
           echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/juan.jks"
           apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
           "$apksigner" sign --ks "$RUNNER_TEMP/juan.jks" --ks-key-alias juan --ks-pass env:KS_PASS --key-pass env:KS_PASS \
@@ -59,9 +65,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           NOTES: ${{ inputs.notes }}
         run: |
-          ver=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts | head -1)
-          last=$(gh release list -R "${{ github.repository }}" --limit 100 --json tagName --jq '[.[].tagName | capture("juan\\.b?(?<n>[0-9]+)$").n | tonumber] | max // 0')
-          n=$((last + 1))
-          tag="v$ver-juan.$n"
-          gh release create "$tag" omalauncher-juan.apk --target juan --title "OmaLauncher $ver (personal build $n)" \
+          ver=${TAG#v}; ver=${ver%-juan.*}; n=${TAG##*.}
+          gh release create "$TAG" omalauncher-juan.apk --target juan --title "OmaLauncher $ver (personal build $n)" \
             --notes "Commit $(git rev-parse --short HEAD) of juan; unit tests passed. ${NOTES}"
