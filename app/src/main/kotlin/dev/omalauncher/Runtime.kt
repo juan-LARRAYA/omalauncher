@@ -301,6 +301,19 @@ class Runtime(
     }
 
     /** Guest configs follow the theme and the installed agents; only while there is a guest. */
+    /**
+     * Tells the guest which build is really running, for the update tile: tapping "Update now" proves nothing, since
+     * Android can still fail or be cancelled, and a tile that trusted the tap hid an install that never happened.
+     */
+    private fun writeRunningTag() {
+        runCatching {
+            proot.hostFile("/root/.cache/omalauncher-running-tag").apply {
+                parentFile?.mkdirs()
+                writeText(BuildConfig.RELEASE_TAG + "\n")
+            }
+        }.onFailure { Log.w("runtime", "couldn't write the running tag", it) }
+    }
+
     private fun syncGuest() {
         if (linux) provisioner.sync()
     }
@@ -342,6 +355,7 @@ class Runtime(
         withContext(Dispatchers.IO) {
             provisioner.sync()
             audio.start()
+            writeRunningTag()
             synchronized(server) { server.input.setKeymap(proot.keymap.path) }
             agents.load()
         }

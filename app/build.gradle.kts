@@ -23,6 +23,8 @@ android {
         targetSdk = 37
         versionCode = 25
         versionName = "0.14.0"
+        // The release tag (v0.14.0-juan.16), from release-juan; "dev" otherwise. Written to the guest at start.
+        buildConfigField("String", "RELEASE_TAG", "\"${providers.gradleProperty("releaseTag").getOrElse("dev")}\"")
         ndk { abiFilters += "arm64-v8a" }
     }
 
