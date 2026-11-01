@@ -569,7 +569,8 @@ class MapsActivity : ComponentActivity() {
             results.addAll(
                 JSONArray(found).objects().map {
                     val place = it.optString("detalle").takeIf { d -> d.isNotEmpty() && d != "null" }
-                    Place(it.getString("nombre"), listOfNotNull(it.getString("tipo"), place).joinToString(" · "), it.getDouble("lat"), it.getDouble("lon"))
+                    val kind = it.getString("tipo").takeUnless { t -> t == "Dirección" && place != null } // su localidad ya la distingue
+                    Place(it.getString("nombre"), listOfNotNull(kind, place).joinToString(" · "), it.getDouble("lat"), it.getDouble("lon"))
                 },
             )
             if (results.isEmpty()) message = "Sin resultados en el mapa del teléfono."
